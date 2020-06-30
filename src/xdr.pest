@@ -1,0 +1,70 @@
+ident = @{ !basic_type ~ (ASCII_ALPHANUMERIC | "_")+ }
+ident_const = { ident }
+ident_value = { ASCII_DIGIT+ }
+basic_type = @{ 
+	("unsigned" ~ WHITESPACE+)? ~ ("int" | "hyper") ~ WHITESPACE+ |
+	("float" | "double" | "string"| "opaque") ~ WHITESPACE+
+}
+
+// Comment types
+comment = { comment_long | comment_short }
+comment_long_inner = { (!"*/" ~ ANY)* }
+comment_long = { "/*" ~ comment_long_inner ~ "*/" }
+comment_short_inner = @{ (!NEWLINE ~ ANY)* }
+comment_short = { "//" ~ comment_short_inner }
+
+// Constant declaration
+constant = { "const" ~ ident ~ "=" ~ ident ~ ";" }
+
+// Enums
+enum_type = { 
+	"enum" ~ ident ~ "{" ~ 
+	enum_variant+ ~ 
+	("," ~ enum_variant)* ~
+	"}" ~ ";" 
+}
+enum_variant = { ident ~ "=" ~ ident }
+
+// A type is a type name and an optional array
+array = _{ array_variable | array_fixed }
+array_variable = { "<" ~ array_length? ~ ">" }
+array_fixed = { "[" ~ array_length ~ "]" }
+array_length = _{ ident_value | ident_const }
+
+// Structs
+struct_type = { 
+	"struct" ~ ident ~ "{" ~ 
+	struct_data_field* ~ 
+	"}" ~ ";" 
+}
+struct_data_field = { data_field }
+option = { "*" ~ ident }
+data_field = _{ (ident | basic_type ) ~ (option | ident) ~ array? ~ ";" }
+
+// Unions
+union = { 
+	"union" ~ ident ~  
+	"switch" ~ "(" ~ (ident | basic_type ) ~ ident ~ ")" ~ 
+	"{" ~
+	(union_case | union_default)* ~ 
+	"}" ~ ";"
+}
+union_case_value = _{ ident_value | ident_const }
+union_data_field = { data_field }
+union_case = { "case" ~ union_case_value ~ ":" ~ (union_data_field | union_void)? }
+union_void = { "void" ~ ";" }
+union_default = { "default" ~ ":" ~ (union_data_field | union_void ) }
+
+// typedefs
+typedef = { "typedef" ~ (ident | basic_type) ~ ident ~ array? ~ ";" }
+
+item = { SOI ~ (
+	constant | 
+	typedef | 
+	enum_type | 
+	struct_type |
+	union
+)* ~ EOI }
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ comment_long | comment_short }
