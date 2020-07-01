@@ -4,5 +4,5 @@ pub use generic_types::*;
 mod constants;
 pub use constants::*;
 
-mod typedefs;
-pub use typedefs::*;
+mod type_index;
+pub use type_index::*;

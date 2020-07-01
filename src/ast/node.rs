@@ -56,6 +56,30 @@ impl<'a> Node<'a> {
             _ => panic!("no node inner"),
         }
     }
+
+    #[cfg(test)]
+    pub fn unwrap_struct(&'a self) -> &Struct<'a> {
+        if let Self::Struct(s) = self {
+            return s;
+        }
+        panic!("unwrap_struct not a struct")
+    }
+
+    #[cfg(test)]
+    pub fn unwrap_union(&'a self) -> &Union<'a> {
+        if let Self::Union(s) = self {
+            return s;
+        }
+        panic!("unwrap_union not a union")
+    }
+
+    #[cfg(test)]
+    pub fn unwrap_enum(&self) -> &Enum {
+        if let Self::Enum(s) = self {
+            return s;
+        }
+        panic!("unwrap_enum not a enum")
+    }
 }
 
 pub(crate) fn walk<'a>(ast: Pair<'a, Rule>) -> Result<Node, Box<dyn std::error::Error + 'static>> {

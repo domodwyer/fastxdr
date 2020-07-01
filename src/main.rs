@@ -31,7 +31,7 @@ fn main() -> Result<()> {
 
     let case_index = build_constant_index(&ast);
     let generic_index = build_generic_index(&ast);
-    let type_index = build_typedef_index(&ast);
+    let type_index = TypeIndex::new(&ast);
 
     dbg!(case_index);
     dbg!(generic_index);

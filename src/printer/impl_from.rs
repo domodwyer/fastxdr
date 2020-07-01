@@ -1,6 +1,6 @@
 use super::SafeName;
 use crate::ast::{BasicType, Node};
-use crate::indexes::{GenericIndex, TypedefTarget};
+use crate::indexes::{ConcreteType, GenericIndex, TypeIndex};
 use crate::Result;
 use std::collections::{BTreeMap, HashMap};
 
@@ -9,7 +9,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
     item: &Node,
     generic_index: &GenericIndex<'a>,
     case_index: &BTreeMap<&str, String>,
-    type_index: &HashMap<&'a str, TypedefTarget<'a>>,
+    type_index: &TypeIndex<'a>,
 ) -> Result<()> {
     match item {
         Node::EOF => {}
@@ -29,15 +29,6 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
             Ok(())
         })?,
         Node::Union(v) => print_try_from(w, v.name.as_str(), generic_index, |w| {
-            // let type_name = type_index
-            //     .get(v.name.as_str())
-            //     .map(|v| match v {
-            //         TypedefTarget::Compound(Node::Struct(c)) => c.name(),
-            //         TypedefTarget::Compound(Node::Union(c)) => c.name(),
-            //         _ => unreachable!(),
-            //     })
-            //     .unwrap_or(v.name.as_str());
-
             write!(w, "let {} = ", v.switch.var_name)?;
             print_decode_field(w, &v.switch.var_type, type_index)?;
             writeln!(w, "?;")?;
@@ -144,7 +135,7 @@ fn try_from(v: Bytes) -> Result<Self, Self::Error> {{"#
 fn print_decode_field<'a, W: std::fmt::Write>(
     w: &mut W,
     t: &BasicType<'a>,
-    type_index: &HashMap<&'a str, TypedefTarget<'a>>,
+    type_index: &TypeIndex<'a>,
 ) -> Result<()> {
     match t {
         BasicType::U32 => write!(w, "v.try_u32()")?,
@@ -155,29 +146,16 @@ fn print_decode_field<'a, W: std::fmt::Write>(
         BasicType::F64 => write!(w, "v.try_f64()")?,
         BasicType::String => write!(w, "v.try_string()")?,
         BasicType::Bool => write!(w, "v.try_bool()")?,
-        BasicType::Opaque => write!(w, "v.try_bytes()")?,
-        BasicType::Ident(c) => {
-            // Check if the ident is a typedef
-            if let Some(target) = type_index.get(c.as_ref()) {
-                // It is a typedef, decode the underlying target type.
-                match target {
-                    TypedefTarget::Type(t) => return print_decode_field(w, t, type_index),
-                    TypedefTarget::Compound(Node::Struct(c)) => {
-                        write!(w, "{}::try_from(v)", c.name())?;
-                    }
-                    TypedefTarget::Compound(Node::Union(c)) => {
-                        write!(w, "{}::try_from(v)", c.name())?;
-                    }
-                    _ => unreachable!("unexpected struct field type"),
-                }
+        BasicType::Opaque => write!(w, "v.try_bytes(None)")?,
 
-                return Ok(());
-            }
-
-            // Otherwise this is a name of a struct or other type that should
-            // have From<Bytes> implemented itself.
-            write!(w, "{}::try_from(v)", c.as_ref())?;
-        }
+        // An ident may refer to a typedef, or a compound type.
+        BasicType::Ident(c) => match type_index.get_concrete(c) {
+            Some(ConcreteType::Basic(ref b)) => return print_decode_field(w, b, type_index),
+            Some(ConcreteType::Struct(s)) => write!(w, "{}::try_from(v)", s.name())?,
+            Some(ConcreteType::Union(u)) => write!(w, "{}::try_from(v)", u.name())?,
+            Some(ConcreteType::Enum(e)) => write!(w, "v.try_i32()")?,
+            None => return Err(format!("unresolvable type {}", c.as_ref()).into()),
+        },
     };
     Ok(())
 }
@@ -197,7 +175,7 @@ mod tests {
                 let ast = walk(ast.next().unwrap()).unwrap();
                 let case_index = build_constant_index(&ast);
                 let generic_index = build_generic_index(&ast);
-                let type_index = build_typedef_index(&ast);
+                let type_index = TypeIndex::new(&ast);
 
                 let mut got = String::new();
                 print_impl_from(&mut got, &ast, &generic_index, &case_index, &type_index).unwrap();
@@ -206,12 +184,6 @@ mod tests {
             }
         };
     }
-
-    // TODO: x contains y
-    // TODO: struct -> union
-    // TODO: union -> struct
-    // TODO: union -> union
-    // TODO: union_basic_types
 
     // TODO: option struct
 
@@ -243,7 +215,7 @@ e: v.try_f32()?,
 f: v.try_f64()?,
 g: v.try_string()?,
 h: v.try_bool()?,
-i: v.try_bytes()?,
+i: v.try_bytes(None)?,
 })
 }
 }
@@ -315,7 +287,7 @@ type Error = Error;
 
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_bytes()?,
+b: v.try_bytes(None)?,
 })
 }
 }
@@ -379,7 +351,7 @@ type Error = Error;
 
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_bytes()?,
+b: v.try_bytes(None)?,
 })
 }
 }
@@ -428,7 +400,7 @@ type Error = Error;
 
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_bytes()?,
+a: v.try_bytes(None)?,
 })
 }
 }
@@ -441,7 +413,7 @@ a: v.try_bytes()?,
 			typedef my_union alias;
 			union my_union switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			};
 			struct small {
 				alias a;
@@ -453,7 +425,7 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -471,13 +443,48 @@ a: my_union::try_from(v)?,
     );
 
     test_convert!(
+        test_struct_nested_typedef_to_union_generic,
+        r#"
+			typedef my_union alias;
+			union my_union switch (unsigned int status) {
+			case 1:
+				opaque       resok4;
+			};
+			struct small {
+				alias a;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for my_union<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(v.try_bytes(None)?),
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: my_union::try_from(v)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
         test_union,
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -486,8 +493,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-2 => Self::name(SomeType::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
+2 => Self::name(v.try_u64()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -501,9 +508,9 @@ d => return Err(Error::UnknownVariant(d)),
 			const MODE4_SUID = 0x800;
 			union CB_GETATTR4res switch (unsigned int status) {
 			case MODE4_SUID:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -512,8 +519,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-MODE4_SUID => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-2 => Self::name(SomeType::try_from(v)?),
+MODE4_SUID => Self::resok4(v.try_u32()?),
+2 => Self::name(v.try_u64()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -530,9 +537,9 @@ d => return Err(Error::UnknownVariant(d)),
 			};
 			union CB_GETATTR4res switch (unsigned int status) {
 			case MODE4_SUID:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -541,8 +548,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-Status::MODE4_SUID => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-2 => Self::name(SomeType::try_from(v)?),
+Status::MODE4_SUID => Self::resok4(v.try_u32()?),
+2 => Self::name(v.try_u64()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -555,9 +562,9 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
-				SomeType       type;
+				u64       type;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -566,8 +573,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-2 => Self::type(SomeType::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
+2 => Self::type(v.try_u64()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -580,10 +587,10 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
 			case 3:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -592,9 +599,9 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-2 => Self::name(SomeType::try_from(v)?),
-3 => Self::name(SomeType::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
+2 => Self::name(v.try_u64()?),
+3 => Self::name(v.try_u64()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -607,9 +614,9 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			default:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -618,8 +625,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-_ => Self::name(SomeType::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
+_ => Self::name(v.try_u64()?),
 })
 }
 }
@@ -631,10 +638,10 @@ _ => Self::name(SomeType::try_from(v)?),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
 			default:
-				SomeType       name;
+				u64       name;
 			};
 		"#,
         r#"impl TryFrom<Bytes> for CB_GETATTR4res {
@@ -643,8 +650,8 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
-_ => Self::name(SomeType::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
+_ => Self::name(v.try_u64()?),
 })
 }
 }
@@ -658,7 +665,7 @@ _ => Self::name(SomeType::try_from(v)?),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			default:
 				void;
 			};
@@ -669,7 +676,7 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
 _ => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
 })
@@ -685,7 +692,7 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
 			default:
 				void;
@@ -697,7 +704,7 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 _ => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
@@ -712,7 +719,7 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
 				void;
 			};
@@ -723,7 +730,7 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
 })
@@ -737,7 +744,7 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
-				CB_GETATTR4resok       resok4;
+				u32       resok4;
 			case 2:
 			case 3:
 				void;
@@ -749,9 +756,46 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(CB_GETATTR4resok::try_from(v)?),
+1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 3 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_nested_struct,
+        r#"
+			struct simple {
+				u32 a;
+			};
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				simple       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for simple {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(simple {
+a: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for CB_GETATTR4res {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(simple::try_from(v)?),
+2 => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -764,7 +808,7 @@ d => return Err(Error::UnknownVariant(d)),
         r#"
 			union my_union switch (unsigned int status) {
 			case 1:
-				SomeType       var;
+				u32       var;
 			};
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
@@ -779,7 +823,7 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::var(SomeType::try_from(v)?),
+1 => Self::var(v.try_u32()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -800,12 +844,52 @@ d => return Err(Error::UnknownVariant(d)),
     );
 
     test_convert!(
+        test_union_nested_union_generic,
+        r#"
+			union my_union switch (unsigned int status) {
+			case 1:
+				opaque       var;
+			};
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				my_union       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for my_union<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::var(v.try_bytes(None)?),
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(my_union::try_from(v)?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
         test_union_nested_typedef_to_union,
         r#"
 			typedef my_union alias;
 			union my_union switch (unsigned int status) {
 			case 1:
-				SomeType       var;
+				u32       var;
 			};
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
@@ -820,12 +904,53 @@ type Error = Error;
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::var(SomeType::try_from(v)?),
+1 => Self::var(v.try_u32()?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
 }
 impl TryFrom<Bytes> for CB_GETATTR4res {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(my_union::try_from(v)?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_nested_typedef_to_union_generic,
+        r#"
+			typedef my_union alias;
+			union my_union switch (unsigned int status) {
+			case 1:
+				opaque       var;
+			};
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				alias       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for my_union<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::var(v.try_bytes(None)?),
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
 fn try_from(v: Bytes) -> Result<Self, Self::Error> {
@@ -879,6 +1004,44 @@ d => return Err(Error::UnknownVariant(d)),
     );
 
     test_convert!(
+        test_union_nested_typedef_to_struct_generic,
+        r#"
+			typedef small alias;
+			struct small {
+				opaque a;
+			};
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				alias       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_bytes(None)?,
+})
+}
+}
+impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(small::try_from(v)?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
         test_union_nested_typedef_to_basic_type,
         r#"
 			typedef u32 alias;
@@ -904,17 +1067,137 @@ d => return Err(Error::UnknownVariant(d)),
 "#
     );
 
-    // TODO: test_struct_nested_typedef_to_union_generic
+    test_convert!(
+        test_union_nested_typedef_to_basic_type_generic,
+        r#"
+			typedef opaque alias;
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				alias       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+type Error = Error;
 
-    // TODO: test_union_nested_union_generic
-    // TODO: test_union_nested_struct
-    // TODO: test_union_nested_struct_generic
-    // TODO: test_union_nested_typedef_to_struct_generic
-    // TODO: test_union_nested_typedef_to_union_generic
-    // TODO: test_union_nested_typedef_to_basic_type_generic
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(v.try_bytes(None)?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
 
-    // TODO: union w/ typedef type in switch ()
-    // TODO: union w/ typedef type as name
+    test_convert!(
+        test_union_nested_basic_type,
+        r#"
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				u32       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(v.try_u32()?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_nested_basic_type_generic,
+        r#"
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				opaque       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(v.try_bytes(None)?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_switch_typedef,
+        r#"
+			typedef u32 alias;
+			union CB_GETATTR4res switch (alias status) {
+			case 1:
+				u32       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let status = v.try_u32()?;
+Ok(match status {
+1 => Self::resok4(v.try_u32()?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_switch_enum,
+        r#"
+			enum time_how4 {
+				SET_TO_SERVER_TIME4 = 0,
+				SET_TO_CLIENT_TIME4 = 1
+			};
+
+			union settime4 switch (time_how4 set_it) {
+			case SET_TO_CLIENT_TIME4:
+				u32       time;
+			default:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for settime4 {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+let set_it = v.try_i32()?;
+Ok(match set_it {
+time_how4::SET_TO_CLIENT_TIME4 => Self::time(v.try_u32()?),
+_ => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
 
     // TODO: fixed_array_const from enum
     // TODO: fixed_variable from enum
