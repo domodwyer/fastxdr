@@ -10,7 +10,7 @@ pub fn build_constant_index<'a>(ast: &'a Node) -> BTreeMap<&'a str, String> {
                 Node::Constant(vs) => {
                     // Map constants to themselves, they do not require namespacing.
                     if case_values
-                        .insert(vs[0].ident_str(), vs[0].ident_str().to_string())
+                        .insert(vs[0].ident_str(), vs[1].ident_str().to_string())
                         .is_some()
                     {
                         panic!("duplicate case keys {}", vs[0].ident_str());
@@ -23,7 +23,7 @@ pub fn build_constant_index<'a>(ast: &'a Node) -> BTreeMap<&'a str, String> {
                     // become `Status::NFS_OK`.
                     for v in e.variants.iter() {
                         if case_values
-                            .insert(v.name.as_str(), format!("{}::{}", e.name, v.name.as_str()))
+                            .insert(v.name.as_str(), format!("{}", v.value))
                             .is_some()
                         {
                             panic!("duplicate case keys {}", v.name.as_str());

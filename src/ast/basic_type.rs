@@ -38,18 +38,21 @@ impl<'a> BasicType<'a> {
             _ => return self.as_str().to_string(),
         };
 
-        match name {
+        let name = match name {
+            "TRUE" | "FALSE" => name.to_lowercase(),
+            v => v.to_string(),
+        };
+
+        match name.as_str() {
             "as" | "async" | "await" | "break" | "const" | "continue" | "crate" | "dyn"
             | "else" | "enum" | "extern" | "false" | "fn" | "for" | "if" | "impl" | "in"
             | "let" | "loop" | "match" | "mod" | "move" | "mut" | "pub" | "ref" | "return"
             | "Self" | "self" | "static" | "struct" | "super" | "trait" | "true" | "type"
             | "union" | "unsafe" | "use" | "where" | "while" => format!("{}_v", name),
-            _ => name.to_string(),
+            _ => name,
         }
     }
 }
-
-impl<'a> BasicType<'a> {}
 
 impl<'a> std::fmt::Display for BasicType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
