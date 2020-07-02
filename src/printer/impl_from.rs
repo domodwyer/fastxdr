@@ -2,7 +2,7 @@ use super::SafeName;
 use crate::ast::{BasicType, Node};
 use crate::indexes::{ConcreteType, GenericIndex, TypeIndex};
 use crate::Result;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub fn print_impl_from<'a, W: std::fmt::Write>(
     w: &mut W,
@@ -22,12 +22,33 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
             writeln!(w, "Ok({} {{", v.name)?;
             for f in v.fields.iter() {
                 write!(w, "{}: ", SafeName(&f.field_name))?;
-                print_decode_field(w, f.field_value.unwrap_array(), type_index)?;
-                writeln!(w, "?,")?;
+                if f.is_optional {
+                    // This field is an optional field
+                    //
+                    // Outputs:
+                    // 		match v.try_i32()? {
+                    // 			0 => None,
+                    // 			1 => Some(Box::new(TYPE::try_from(v)?)),
+                    // 			d => return Err(Error::UnknownVariant(d)),
+                    // 		}
+                    writeln!(w, "{{ match v.try_u32()? {{")?;
+                    writeln!(w, "0 => None,")?;
+                    writeln!(
+                        w,
+                        "1 => Some(Box::new({}::try_from(v)?)),",
+                        f.field_value.unwrap_array()
+                    )?;
+                    writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
+                    writeln!(w, "}}}},")?;
+                } else {
+                    print_decode_field(w, f.field_value.unwrap_array(), type_index)?;
+                    writeln!(w, "?,")?;
+                }
             }
             writeln!(w, "}})")?;
             Ok(())
         })?,
+
         Node::Union(v) => print_try_from(w, v.name.as_str(), generic_index, |w| {
             write!(w, "let {} = ", v.switch.var_name)?;
             print_decode_field(w, &v.switch.var_type, type_index)?;
@@ -144,8 +165,8 @@ fn print_decode_field<'a, W: std::fmt::Write>(
         BasicType::I64 => write!(w, "v.try_i64()")?,
         BasicType::F32 => write!(w, "v.try_f32()")?,
         BasicType::F64 => write!(w, "v.try_f64()")?,
-        BasicType::String => write!(w, "v.try_string()")?,
         BasicType::Bool => write!(w, "v.try_bool()")?,
+        BasicType::String => write!(w, "v.try_string()")?,
         BasicType::Opaque => write!(w, "v.try_bytes(None)")?,
 
         // An ident may refer to a typedef, or a compound type.
@@ -153,7 +174,7 @@ fn print_decode_field<'a, W: std::fmt::Write>(
             Some(ConcreteType::Basic(ref b)) => return print_decode_field(w, b, type_index),
             Some(ConcreteType::Struct(s)) => write!(w, "{}::try_from(v)", s.name())?,
             Some(ConcreteType::Union(u)) => write!(w, "{}::try_from(v)", u.name())?,
-            Some(ConcreteType::Enum(e)) => write!(w, "v.try_i32()")?,
+            Some(ConcreteType::Enum(_e)) => write!(w, "v.try_i32()")?,
             None => return Err(format!("unresolvable type {}", c.as_ref()).into()),
         },
     };
@@ -185,8 +206,6 @@ mod tests {
         };
     }
 
-    // TODO: option struct
-
     test_convert!(
         test_struct_basic_types,
         r#"
@@ -216,6 +235,64 @@ f: v.try_f64()?,
 g: v.try_string()?,
 h: v.try_bool()?,
 i: v.try_bytes(None)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_option,
+        r#"
+			struct other {
+				u32 b;
+			};
+			struct small {
+				other *a;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: { match v.try_u32()? {
+0 => None,
+1 => Some(Box::new(other::try_from(v)?)),
+d => return Err(Error::UnknownOptionVariant(d)),
+}},
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_option_self_referential,
+        r#"
+			struct small {
+				small *a;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: { match v.try_u32()? {
+0 => None,
+1 => Some(Box::new(small::try_from(v)?)),
+d => return Err(Error::UnknownOptionVariant(d)),
+}},
 })
 }
 }
@@ -1200,7 +1277,8 @@ d => return Err(Error::UnknownVariant(d)),
     );
 
     // TODO: fixed_array_const from enum
-    // TODO: fixed_variable from enum
+    // TODO: fixed_array_known from enum
+    // TODO: fixed_variable_no_max from enum
     // TODO: fixed_variable_max_known from enum
     // TODO: fixed_variable_max_const from enum
     //     test_convert!(

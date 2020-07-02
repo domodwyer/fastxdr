@@ -21,7 +21,10 @@ pub enum Error {
     InvalidBoolean,
 
     #[error("unknown enum variant {0}")]
-    UnknownVariant(u32),
+    UnknownVariant(i32),
+
+    #[error("unknown option variant {0}")]
+    UnknownOptionVariant(u32),
 }
 
 pub trait DeserialiserExt {
