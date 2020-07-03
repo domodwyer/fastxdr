@@ -1,5 +1,5 @@
 use super::SafeName;
-use crate::ast::{BasicType, Node};
+use crate::ast::{ArraySize, ArrayType, BasicType, Node};
 use crate::indexes::{ConcreteType, GenericIndex, TypeIndex};
 use crate::Result;
 use std::collections::BTreeMap;
@@ -8,14 +8,14 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
     w: &mut W,
     item: &Node,
     generic_index: &GenericIndex<'a>,
-    case_index: &BTreeMap<&str, String>,
+    constant_index: &BTreeMap<&str, String>,
     type_index: &TypeIndex<'a>,
 ) -> Result<()> {
     match item {
         Node::EOF => {}
         Node::Root(v) => {
             for field in v.iter() {
-                print_impl_from(w, field, generic_index, case_index, type_index)?;
+                print_impl_from(w, field, generic_index, constant_index, type_index)?;
             }
         }
         Node::Struct(v) => print_try_from(w, v.name.as_str(), generic_index, |w| {
@@ -41,8 +41,8 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                     writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
                     writeln!(w, "}}}},")?;
                 } else {
-                    print_decode_field(w, f.field_value.unwrap_array(), type_index)?;
-                    writeln!(w, "?,")?;
+                    print_decode_array(w, &f.field_value, type_index, constant_index)?;
+                    writeln!(w, ",")?;
                 }
             }
             writeln!(w, "}})")?;
@@ -66,12 +66,12 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                 for c_value in c.case_values.iter() {
                     // The case value may be a declaried constant or enum value.
                     //
-                    // Lookup the value in the `case_index`.
-                    let matcher = case_index.get(c_value.as_str()).unwrap_or(c_value);
+                    // Lookup the value in the `constant_index`.
+                    let matcher = constant_index.get(c_value.as_str()).unwrap_or(c_value);
 
                     write!(w, "{} => Self::{}(", SafeName(matcher), c.field_name)?;
-                    print_decode_field(w, c.field_value.unwrap_array(), type_index)?;
-                    writeln!(w, "?),")?;
+                    print_decode_array(w, &c.field_value, type_index, constant_index)?;
+                    writeln!(w, "),")?;
                 }
             }
 
@@ -88,8 +88,8 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
             // returns an error.
             if let Some(ref d) = v.default {
                 write!(w, "_ => Self::{}(", SafeName(&d.field_name))?;
-                print_decode_field(w, d.field_value.unwrap_array(), type_index)?;
-                writeln!(w, "?),")?;
+                print_decode_array(w, &d.field_value, type_index, constant_index)?;
+                writeln!(w, "),")?;
             } else {
                 writeln!(w, "d => return Err(Error::UnknownVariant(d)),")?;
             }
@@ -148,16 +148,69 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {{"#
     Ok(())
 }
 
+fn print_decode_array<'a, W>(
+    w: &mut W,
+    t: &ArrayType<BasicType<'a>>,
+    type_index: &TypeIndex<'a>,
+    constant_index: &BTreeMap<&str, String>,
+) -> Result<()>
+where
+    W: std::fmt::Write,
+{
+    match t {
+        ArrayType::None(t) => {
+            print_decode_field(w, t, type_index)?;
+            write!(w, "?")?;
+        }
+        ArrayType::FixedSize(t, ArraySize::Known(size)) => {
+            writeln!(w, "[")?;
+            for _i in 0..*size {
+                print_decode_field(w, t, type_index)?;
+                writeln!(w, "?,")?;
+            }
+            write!(w, "]")?;
+        }
+        ArrayType::FixedSize(t, ArraySize::Constant(size)) => {
+            // Try and resolve the constant value
+            let size = constant_index
+                .get(size.as_str())
+                .ok_or(format!("unknown constant {}", size))?;
+
+            writeln!(w, "[")?;
+            for _i in 0..size.parse()? {
+                print_decode_field(w, t, type_index)?;
+                writeln!(w, "?,")?;
+            }
+            write!(w, "]")?;
+        }
+        ArrayType::VariableSize(t, Some(ArraySize::Known(size))) => {
+            write!(w, "v.try_variable_array::<{}>(Some({}))?", t, size)?;
+        }
+        ArrayType::VariableSize(t, Some(ArraySize::Constant(size))) => {
+            // Try and resolve the constant value
+            let size = constant_index
+                .get(size.as_str())
+                .ok_or("unknown constant")?;
+
+            write!(w, "v.try_variable_array::<{}>(Some({}))?", t, size)?;
+        }
+        ArrayType::VariableSize(t, None) => {
+            write!(w, "v.try_variable_array::<{}>(None)?", t)?;
+        }
+    };
+
+    Ok(())
+}
+
 /// Generates the template required to decode `t` from a variable called `v`
 /// that implements the reader trait.
 ///
 /// If `t` is a typedef alias, the typedef chain is resolved to the underlying
 /// type.
-fn print_decode_field<'a, W: std::fmt::Write>(
-    w: &mut W,
-    t: &BasicType<'a>,
-    type_index: &TypeIndex<'a>,
-) -> Result<()> {
+fn print_decode_field<'a, W>(w: &mut W, t: &BasicType<'a>, type_index: &TypeIndex<'a>) -> Result<()>
+where
+    W: std::fmt::Write,
+{
     match t {
         BasicType::U32 => write!(w, "v.try_u32()")?,
         BasicType::U64 => write!(w, "v.try_u64()")?,
@@ -194,12 +247,13 @@ mod tests {
             fn $name() {
                 let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
                 let ast = walk(ast.next().unwrap()).unwrap();
-                let case_index = build_constant_index(&ast);
+                let constant_index = build_constant_index(&ast);
                 let generic_index = build_generic_index(&ast);
                 let type_index = TypeIndex::new(&ast);
 
                 let mut got = String::new();
-                print_impl_from(&mut got, &ast, &generic_index, &case_index, &type_index).unwrap();
+                print_impl_from(&mut got, &ast, &generic_index, &constant_index, &type_index)
+                    .unwrap();
 
                 assert_eq!(got, $want);
             }
@@ -1247,6 +1301,31 @@ d => return Err(Error::UnknownVariant(d)),
     );
 
     test_convert!(
+        test_union_reserved_fieldname,
+        r#"
+			union CB_GETATTR4res switch (u32 type) {
+			case 1:
+				u32       resok4;
+			case 2:
+				void;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let type = v.try_u32()?;
+Ok(match type {
+1 => Self::resok4(v.try_u32()?),
+2 => Self::Void,
+d => return Err(Error::UnknownVariant(d)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
         test_union_switch_enum,
         r#"
 			enum time_how4 {
@@ -1276,28 +1355,274 @@ d => return Err(Error::UnknownVariant(d)),
 "#
     );
 
-    // TODO: fixed_array_const from enum
-    // TODO: fixed_array_known from enum
-    // TODO: fixed_variable_no_max from enum
-    // TODO: fixed_variable_max_known from enum
-    // TODO: fixed_variable_max_const from enum
-    //     test_convert!(
-    //         test_fixed_array_known,
-    //         r#"
-    // 			struct small {
-    // 				uint32_t a[3];
-    // 			};
-    // 		"#,
-    //         r#"impl TryFrom<Bytes> for small {
-    // 	type Error = Error;
+    test_convert!(
+        test_fixed_array_known,
+        r#"
+            struct small {
+                uint32_t a[3];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
 
-    // 	fn try_from(v: Bytes) -> Result<Self, Self::Error> {
-    // 		let a1 = v.try_u32();
-    // 		let a2 = v.try_u32();
-    // 		let a3 = v.try_u32();
-    // 		small{a: [a1, a2, a3]}
-    // 	}
-    // }
-    // "#
-    //     );
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+v.try_u32()?,
+v.try_u32()?,
+v.try_u32()?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_fixed_array_known_struct,
+        r#"
+            struct other {
+                u32 b;
+            };
+            struct small {
+                other a[2];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+other::try_from(v)?,
+other::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_fixed_array_const,
+        r#"
+            const SIZE = 2;
+            struct small {
+                uint32_t a[SIZE];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+v.try_u32()?,
+v.try_u32()?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_fixed_array_const_struct,
+        r#"
+            const SIZE = 2;
+            struct other {
+                u32 b;
+            };
+            struct small {
+                other a[SIZE];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+other::try_from(v)?,
+other::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_no_max,
+        r#"
+            struct small {
+                uint32_t a<>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<u32>(None)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_no_max_struct,
+        r#"
+            struct other {
+                u32 b;
+            };
+            struct small {
+                other a<>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<other>(None)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_max_known,
+        r#"
+            struct small {
+                uint32_t a<42>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<u32>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_max_known_struct,
+        r#"
+            struct other {
+                u32 b;
+            };
+            struct small {
+                other a<42>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<other>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    // TODO: array of unions
+    // TODO: generic variants
+    // TODO: array of structs
+
+    test_convert!(
+        test_variable_array_max_const,
+        r#"
+            const SIZE = 42;
+            struct small {
+                uint32_t a<SIZE>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<u32>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_max_const_struct,
+        r#"
+            const SIZE = 42;
+            struct other {
+                u32 b;
+            };
+            struct small {
+                other a<SIZE>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_u32()?,
+})
+}
+}
+impl TryFrom<Bytes> for small {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<other>(Some(42))?,
+})
+}
+}
+"#
+    );
 }
