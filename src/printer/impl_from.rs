@@ -41,7 +41,13 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                     writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
                     writeln!(w, "}}}},")?;
                 } else {
-                    print_decode_array(w, &f.field_value, type_index, constant_index)?;
+                    print_decode_array(
+                        w,
+                        &f.field_value,
+                        type_index,
+                        constant_index,
+                        generic_index,
+                    )?;
                     writeln!(w, ",")?;
                 }
             }
@@ -70,7 +76,13 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                     let matcher = constant_index.get(c_value.as_str()).unwrap_or(c_value);
 
                     write!(w, "{} => Self::{}(", SafeName(matcher), c.field_name)?;
-                    print_decode_array(w, &c.field_value, type_index, constant_index)?;
+                    print_decode_array(
+                        w,
+                        &c.field_value,
+                        type_index,
+                        constant_index,
+                        generic_index,
+                    )?;
                     writeln!(w, "),")?;
                 }
             }
@@ -88,7 +100,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
             // returns an error.
             if let Some(ref d) = v.default {
                 write!(w, "_ => Self::{}(", SafeName(&d.field_name))?;
-                print_decode_array(w, &d.field_value, type_index, constant_index)?;
+                print_decode_array(w, &d.field_value, type_index, constant_index, generic_index)?;
                 writeln!(w, "),")?;
             } else {
                 writeln!(w, "d => return Err(Error::UnknownVariant(d)),")?;
@@ -153,6 +165,7 @@ fn print_decode_array<'a, W>(
     t: &ArrayType<BasicType<'a>>,
     type_index: &TypeIndex<'a>,
     constant_index: &BTreeMap<&str, String>,
+    generic_index: &GenericIndex<'a>,
 ) -> Result<()>
 where
     W: std::fmt::Write,
@@ -184,7 +197,13 @@ where
             write!(w, "]")?;
         }
         ArrayType::VariableSize(t, Some(ArraySize::Known(size))) => {
-            write!(w, "v.try_variable_array::<{}>(Some({}))?", t, size)?;
+            let mut type_str = t.to_string();
+
+            if generic_index.contains(type_str.as_str()) {
+                type_str = format!("{}<Bytes>", type_str);
+            };
+
+            write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?;
         }
         ArrayType::VariableSize(t, Some(ArraySize::Constant(size))) => {
             // Try and resolve the constant value
@@ -192,10 +211,22 @@ where
                 .get(size.as_str())
                 .ok_or("unknown constant")?;
 
-            write!(w, "v.try_variable_array::<{}>(Some({}))?", t, size)?;
+            let mut type_str = t.to_string();
+
+            if generic_index.contains(type_str.as_str()) {
+                type_str = format!("{}<Bytes>", type_str);
+            };
+
+            write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?;
         }
         ArrayType::VariableSize(t, None) => {
-            write!(w, "v.try_variable_array::<{}>(None)?", t)?;
+            let mut type_str = t.to_string();
+
+            if generic_index.contains(type_str.as_str()) {
+                type_str = format!("{}<Bytes>", type_str);
+            };
+
+            write!(w, "v.try_variable_array::<{}>(None)?", type_str)?;
         }
     };
 
