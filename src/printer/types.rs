@@ -16,7 +16,7 @@ pub fn print_types<W: std::fmt::Write>(
             }
         }
         Node::Struct(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}\n#[repr(C)]", DERIVE)?;
             write!(w, "pub struct {}", v.name)?;
             if generic_index.contains(v.name.as_str()) {
                 write!(w, "{}", TRAIT_BOUNDS)?;
@@ -54,7 +54,7 @@ pub fn print_types<W: std::fmt::Write>(
             writeln!(w, "}}")?;
         }
         Node::Union(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}\n#[repr(C)]", DERIVE)?;
             write!(w, "pub enum {}", v.name())?;
             if generic_index.contains(v.name()) {
                 write!(w, "{}", TRAIT_BOUNDS)?;
@@ -83,7 +83,7 @@ pub fn print_types<W: std::fmt::Write>(
             writeln!(w, "}}")?;
         }
         Node::Enum(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}\n#[repr(C)]", DERIVE)?;
             writeln!(w, "pub enum {} {{", v.name)?;
             for var in v.variants.iter() {
                 writeln!(w, "{} = {},", var.name, var.value)?;
@@ -161,6 +161,7 @@ mod tests {
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum locker4 {
 open_owner(open_to_lock_owner4),
 lock_owner(exist_lock_owner4),
@@ -181,6 +182,7 @@ lock_owner(exist_lock_owner4),
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum LOCKT4res {
 denied(LOCK4denied),
 Void,
@@ -206,6 +208,7 @@ Void,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum createtype4 {
 linkdata(linktext4),
 devdata(specdata4),
@@ -230,6 +233,7 @@ Void,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct LOCK4args {
 locktype: nfs_lock_type4,
 reclaim: bool,
@@ -249,6 +253,7 @@ locker: locker4,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
 seqid: u32,
 other: T,
@@ -265,6 +270,7 @@ other: T,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct nfs_client_id4<T> where T: AsRef<[u8]> + Debug {
 verifier: verifier4,
 id: T,
@@ -281,6 +287,7 @@ id: T,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct READ4resok<T> where T: AsRef<[u8]> + Debug {
 eof: bool,
 data: T,
@@ -298,6 +305,7 @@ data: T,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct clientaddr4 {
 r_netid: Vec<String>,
 r_addr: Vec<String>,
@@ -314,6 +322,7 @@ r_addr: Vec<String>,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum opentype4 {
 OPEN4_NOCREATE = 0,
 OPEN4_CREATE = 1,
@@ -354,6 +363,7 @@ type utf8str_cis<T> = utf8string<T>;
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct cb_client4 {
 cb_program: u32,
 cb_location: clientaddr4,
@@ -374,11 +384,13 @@ cb_location: clientaddr4,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
 seqid: u32,
 other: T,
 }
 #[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct generic_field<T> where T: AsRef<[u8]> + Debug {
 inner: stateid4<T>,
 }
@@ -397,10 +409,12 @@ inner: stateid4<T>,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
 other: T,
 }
 #[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum nfs_argop4<T> where T: AsRef<[u8]> + Debug {
 field_name(stateid4<T>),
 }
@@ -415,6 +429,7 @@ field_name(stateid4<T>),
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct nfsace4 {
 type_v: acetype4,
 }
@@ -432,6 +447,7 @@ type_v: acetype4,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum CB_GETATTR4res {
 resok4(CB_GETATTR4resok),
 type(SomeType),
@@ -451,6 +467,7 @@ type(SomeType),
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub enum nfs_argop4 {
 opgetattr(GETATTR4args),
 oplink(LINK4args),
@@ -468,6 +485,7 @@ Void,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
 pub struct entry4 {
 nextentry: Option<Box<entry4>>,
 }
