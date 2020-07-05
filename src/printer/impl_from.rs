@@ -56,11 +56,11 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
         })?,
 
         Node::Union(v) => print_try_from(w, v.name.as_str(), generic_index, |w| {
-            write!(w, "let {} = ", v.switch.var_name)?;
+            write!(w, "let {} = ", SafeName(&v.switch.var_name))?;
             print_decode_field(w, &v.switch.var_type, type_index)?;
             writeln!(w, "?;")?;
 
-            writeln!(w, "Ok(match {} {{", v.switch.var_name)?;
+            writeln!(w, "Ok(match {} {{", SafeName(&v.switch.var_name))?;
             for c in v.cases.iter() {
                 // A single case statement may have many case values tied to it
                 // if fallthrough values are used:
@@ -106,13 +106,12 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                 writeln!(w, "d => return Err(Error::UnknownVariant(d)),")?;
             }
 
-            // TODO: opaque max len
-
             writeln!(w, "}})")?;
 
             Ok(())
         })?,
 
+        // TODO: enum try_from()
         Node::Typedef(_) | Node::Constant(_) | Node::Enum(_) => return Ok(()),
 
         Node::Ident(_)
@@ -1408,8 +1407,8 @@ d => return Err(Error::UnknownVariant(d)),
 type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-let type = v.try_u32()?;
-Ok(match type {
+let type_v = v.try_u32()?;
+Ok(match type_v {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
