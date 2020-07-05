@@ -106,6 +106,8 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                 writeln!(w, "d => return Err(Error::UnknownVariant(d)),")?;
             }
 
+            // TODO: opaque max len
+
             writeln!(w, "}})")?;
 
             Ok(())
@@ -176,6 +178,11 @@ where
             write!(w, "?")?;
         }
         ArrayType::FixedSize(t, ArraySize::Known(size)) => {
+            if let BasicType::Opaque = t {
+                write!(w, "v.try_bytes({})?", size)?;
+                return Ok(());
+            };
+
             writeln!(w, "[")?;
             for _i in 0..*size {
                 print_decode_field(w, t, type_index)?;
@@ -188,6 +195,11 @@ where
             let size = constant_index
                 .get(size.as_str())
                 .ok_or(format!("unknown constant {}", size))?;
+
+            if let BasicType::Opaque = t {
+                write!(w, "v.try_bytes({})?", size)?;
+                return Ok(());
+            };
 
             writeln!(w, "[")?;
             for _i in 0..size.parse()? {
@@ -203,7 +215,10 @@ where
                 type_str = format!("{}<Bytes>", type_str);
             };
 
-            write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?;
+            match t {
+                BasicType::Opaque => write!(w, "v.try_variable_bytes(Some({}))?", size)?,
+                _ => write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?,
+            }
         }
         ArrayType::VariableSize(t, Some(ArraySize::Constant(size))) => {
             // Try and resolve the constant value
@@ -217,7 +232,10 @@ where
                 type_str = format!("{}<Bytes>", type_str);
             };
 
-            write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?;
+            match t {
+                BasicType::Opaque => write!(w, "v.try_variable_bytes(Some({}))?", size)?,
+                _ => write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?,
+            }
         }
         ArrayType::VariableSize(t, None) => {
             let mut type_str = t.to_string();
@@ -226,7 +244,10 @@ where
                 type_str = format!("{}<Bytes>", type_str);
             };
 
-            write!(w, "v.try_variable_array::<{}>(None)?", type_str)?;
+            match t {
+                BasicType::Opaque => write!(w, "v.try_variable_bytes(None)?")?,
+                _ => write!(w, "v.try_variable_array::<{}>(None)?", type_str)?,
+            }
         }
     };
 
@@ -250,8 +271,8 @@ where
         BasicType::F32 => write!(w, "v.try_f32()")?,
         BasicType::F64 => write!(w, "v.try_f64()")?,
         BasicType::Bool => write!(w, "v.try_bool()")?,
-        BasicType::String => write!(w, "v.try_string()")?,
-        BasicType::Opaque => write!(w, "v.try_bytes(None)")?,
+        BasicType::String => write!(w, "v.try_string(None)")?,
+        BasicType::Opaque => write!(w, "v.try_variable_bytes(None)")?,
 
         // An ident may refer to a typedef, or a compound type.
         BasicType::Ident(c) => match type_index.get_concrete(c) {
@@ -317,9 +338,62 @@ c: v.try_i32()?,
 d: v.try_i64()?,
 e: v.try_f32()?,
 f: v.try_f64()?,
-g: v.try_string()?,
+g: v.try_string(None)?,
 h: v.try_bool()?,
-i: v.try_bytes(None)?,
+i: v.try_variable_bytes(None)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_opaque_fields,
+        r#"
+            const SIZE = 3;
+			struct small {
+				opaque a;
+				opaque b<>;
+				opaque c<42>;
+				opaque c_c<SIZE>;
+				opaque d[2];
+				opaque d_c[SIZE];
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_bytes(None)?,
+b: v.try_variable_bytes(None)?,
+c: v.try_variable_bytes(Some(42))?,
+c_c: v.try_variable_bytes(Some(3))?,
+d: v.try_bytes(2)?,
+d_c: v.try_bytes(3)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_string_fields,
+        r#"
+			struct small {
+				string a;
+				string b<>;
+				string c<42>;
+			};
+		"#,
+        r#"impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_string(None)?,
+b: v.try_string(None)?,
+c: v.try_string(Some(42))?,
 })
 }
 }
@@ -449,7 +523,7 @@ type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_bytes(None)?,
+b: v.try_variable_bytes(None)?,
 })
 }
 }
@@ -513,7 +587,7 @@ type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_bytes(None)?,
+b: v.try_variable_bytes(None)?,
 })
 }
 }
@@ -562,7 +636,7 @@ type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_bytes(None)?,
+a: v.try_variable_bytes(None)?,
 })
 }
 }
@@ -622,7 +696,7 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(v.try_bytes(None)?),
+1 => Self::resok4(v.try_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -1025,7 +1099,7 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::var(v.try_bytes(None)?),
+1 => Self::var(v.try_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -1107,7 +1181,7 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::var(v.try_bytes(None)?),
+1 => Self::var(v.try_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d)),
 })
 }
@@ -1184,7 +1258,7 @@ type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_bytes(None)?,
+a: v.try_variable_bytes(None)?,
 })
 }
 }
@@ -1246,7 +1320,7 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(v.try_bytes(None)?),
+1 => Self::resok4(v.try_variable_bytes(None)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
 })
@@ -1296,7 +1370,7 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(v.try_bytes(None)?),
+1 => Self::resok4(v.try_variable_bytes(None)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d)),
 })
@@ -1603,7 +1677,6 @@ a: v.try_variable_array::<other>(Some(42))?,
 
     // TODO: array of unions
     // TODO: generic variants
-    // TODO: array of structs
 
     test_convert!(
         test_variable_array_max_const,
@@ -1656,4 +1729,140 @@ a: v.try_variable_array::<other>(Some(42))?,
 }
 "#
     );
+
+    test_convert!(
+        test_fixed_array_known_struct_generic,
+        r#"
+                struct other {
+                    opaque b;
+                };
+                struct small {
+                    other a[2];
+                };
+            "#,
+        r#"impl TryFrom<Bytes> for other<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_variable_bytes(None)?,
+})
 }
+}
+impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+other::try_from(v)?,
+other::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_fixed_array_const_struct_generic,
+        r#"
+                const SIZE = 2;
+                struct other {
+                    opaque b;
+                };
+                struct small {
+                    other a[SIZE];
+                };
+            "#,
+        r#"impl TryFrom<Bytes> for other<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_variable_bytes(None)?,
+})
+}
+}
+impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: [
+other::try_from(v)?,
+other::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_max_known_struct_generic,
+        r#"
+            struct other {
+                opaque b;
+            };
+            struct small {
+                other a<42>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_variable_bytes(None)?,
+})
+}
+}
+impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<other<Bytes>>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_variable_array_max_const_struct_generic,
+        r#"
+            const SIZE = 42;
+            struct other {
+                opaque b;
+            };
+            struct small {
+                other a<SIZE>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for other<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(other {
+b: v.try_variable_bytes(None)?,
+})
+}
+}
+impl TryFrom<Bytes> for small<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(small {
+a: v.try_variable_array::<other<Bytes>>(Some(42))?,
+})
+}
+}
+"#
+    );
+}
+
+// TODO: test_variable_array_max_const_struct_generic
+// TODO: test_variable_array_max_known_struct_generic
+// TODO: test_variable_array_no_max_struct_generic

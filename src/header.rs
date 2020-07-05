@@ -7,6 +7,7 @@
 use bytes::{Buf, BufMut, Bytes};
 use std::convert::TryFrom;
 use std::fmt::Debug;
+use std::mem::size_of;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -41,8 +42,9 @@ pub trait DeserialiserExt {
     fn try_f32(&mut self) -> Result<f32, Error>;
     fn try_f64(&mut self) -> Result<f64, Error>;
     fn try_bool(&mut self) -> Result<bool, Error>;
-    fn try_string(&mut self) -> Result<String, Error>;
-    fn try_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error>;
+    fn try_string(&mut self, max: Option<usize>) -> Result<String, Error>;
+    fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error>;
+    fn try_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error>;
     fn try_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
     where
         T: TryFrom<Self::TryFrom, Error = Error>;
@@ -54,49 +56,49 @@ impl DeserialiserExt for Bytes {
 
     // Try and read a u32 if self contains enough data.
     fn try_u32(&mut self) -> Result<u32, Error> {
-        if self.remaining() < std::mem::size_of::<u32>() {
+        if self.remaining() < size_of::<u32>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_u32())
     }
 
     fn try_u64(&mut self) -> Result<u64, Error> {
-        if self.remaining() < std::mem::size_of::<u64>() {
+        if self.remaining() < size_of::<u64>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_u64())
     }
 
     fn try_i32(&mut self) -> Result<i32, Error> {
-        if self.remaining() < std::mem::size_of::<i32>() {
+        if self.remaining() < size_of::<i32>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_i32())
     }
 
     fn try_i64(&mut self) -> Result<i64, Error> {
-        if self.remaining() < std::mem::size_of::<i64>() {
+        if self.remaining() < size_of::<i64>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_i64())
     }
 
     fn try_f32(&mut self) -> Result<f32, Error> {
-        if self.remaining() < std::mem::size_of::<f32>() {
+        if self.remaining() < size_of::<f32>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_f32())
     }
 
     fn try_f64(&mut self) -> Result<f64, Error> {
-        if self.remaining() < std::mem::size_of::<f64>() {
+        if self.remaining() < size_of::<f64>() {
             return Err(Error::InvalidLength);
         }
         Ok(self.get_f64())
     }
 
     fn try_bool(&mut self) -> Result<bool, Error> {
-        if self.remaining() < std::mem::size_of::<i32>() {
+        if self.remaining() < size_of::<i32>() {
             return Err(Error::InvalidLength);
         }
         match self.get_i32() {
@@ -106,27 +108,43 @@ impl DeserialiserExt for Bytes {
         }
     }
 
-    fn try_string(&mut self) -> Result<String, Error> {
-        let b = self.try_bytes(None)?.iter().copied().collect::<Vec<u8>>();
+    fn try_string(&mut self, max: Option<usize>) -> Result<String, Error> {
+        let b = self
+            .try_variable_bytes(max)?
+            .iter()
+            .copied()
+            .collect::<Vec<u8>>();
         String::from_utf8(b).map_err(|e| e.into())
     }
 
-    /// Try to read an opaque XDR array, prefixed by a length u32.
-    fn try_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
-        let len = self.try_u32()? as usize;
+    /// Try to read an opaque XDR array, prefixed by a length u32 and padded
+    /// modulo 4.
+    fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
+        let n = self.try_u32()? as usize;
 
         if let Some(limit) = max {
-            if len > limit {
+            if n > limit {
                 return Err(Error::InvalidLength);
             }
         }
 
-        if self.remaining() < len {
+        self.try_bytes(n)
+    }
+
+    /// Try to read an opaque XDR array with a fixed length and padded modulo 4.
+    fn try_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error> {
+        // Validate the buffer contains enough data
+        if self.remaining() < n {
             return Err(Error::InvalidLength);
         }
 
-        let data = self.slice(..len);
-        self.advance(data.len());
+        let data = self.slice(..n);
+
+        // All byte arrays are padded modulo 4.
+        let padding = n % 4;
+
+        // Advance the buffer cursor
+        self.advance(data.len() + padding);
 
         Ok(data)
     }
@@ -135,8 +153,6 @@ impl DeserialiserExt for Bytes {
     where
         T: TryFrom<Self, Error = Error>,
     {
-        use std::mem::size_of;
-
         let n = self.try_u32()? as usize;
 
         if let Some(limit) = max {
@@ -162,6 +178,10 @@ impl DeserialiserExt for Bytes {
             self.advance(size_of::<T>());
         }
 
+        // All byte arrays are padded modulo 4.
+        let padding = byte_len % 4;
+        self.advance(padding);
+
         Ok(out)
     }
 }
@@ -172,6 +192,7 @@ mod tests {
     use bytes::BytesMut;
 
     #[derive(Debug, PartialEq)]
+    #[repr(C)]
     struct TestStruct {
         a: u32,
     }
@@ -184,20 +205,95 @@ mod tests {
         }
     }
 
+    #[derive(Debug, PartialEq)]
+    #[repr(C)]
+    struct UnalignedStruct {
+        a: u8,
+    }
+
+    impl TryFrom<Bytes> for UnalignedStruct {
+        type Error = Error;
+
+        fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+            let s = v.slice(..1);
+            v.advance(1);
+            Ok(Self { a: s.as_ref()[0] })
+        }
+    }
+
     #[test]
     fn test_variable_array_no_max() {
         let mut buf = BytesMut::new();
-        buf.put_u32(2); // Len=2
-        buf.put_u32(42); // Struct 1
-        buf.put_u32(24); // Struct 2
+        buf.put_u32(4); // Len=4
+        buf.put_u8(1); // Struct 1
+        buf.put_u8(2); // Struct 2
+        buf.put_u8(3); // Struct 3
+        buf.put_u8(4); // Struct 4
         buf.put_u32(123); // Remaining buffer
         let mut buf = buf.freeze();
 
-        let got = buf.try_variable_array::<TestStruct>(None).unwrap();
+        let got = buf.try_variable_array::<UnalignedStruct>(None).unwrap();
+
+        assert_eq!(got.len(), 4);
+        assert_eq!(got[0], UnalignedStruct { a: 1 });
+        assert_eq!(got[1], UnalignedStruct { a: 2 });
+        assert_eq!(got[2], UnalignedStruct { a: 3 });
+        assert_eq!(got[3], UnalignedStruct { a: 4 });
+
+        assert_eq!(buf.len(), 4);
+        assert_eq!(buf.as_ref(), &[0, 0, 0, 123]);
+    }
+
+    #[test]
+    fn test_variable_array_no_max_with_padding() {
+        let mut buf = BytesMut::new();
+        buf.put_u32(2); // Len=4
+        buf.put_u8(1); // Struct 1
+        buf.put_u8(2); // Struct 2
+        buf.put_u8(0); // Padding
+        buf.put_u8(0); // Padding
+        buf.put_u32(123); // Remaining buffer
+        let mut buf = buf.freeze();
+
+        let got = buf.try_variable_array::<UnalignedStruct>(None).unwrap();
 
         assert_eq!(got.len(), 2);
-        assert_eq!(got[0], TestStruct { a: 42 });
-        assert_eq!(got[1], TestStruct { a: 24 });
+        assert_eq!(got[0], UnalignedStruct { a: 1 });
+        assert_eq!(got[1], UnalignedStruct { a: 2 });
+
+        assert_eq!(buf.len(), 4);
         assert_eq!(buf.as_ref(), &[0, 0, 0, 123]);
+    }
+
+    #[test]
+    fn test_try_variable_bytes_no_max() {
+        let mut buf = BytesMut::new();
+        buf.put_u32(8); // Len=8
+        buf.put([1, 2, 3, 4, 5, 6, 7, 8].as_ref());
+        let mut buf = buf.freeze();
+
+        let got = buf.try_variable_bytes(None).unwrap();
+
+        assert_eq!(got.len(), 8);
+        assert_eq!(got.as_ref(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+
+        assert_eq!(buf.as_ref(), &[]);
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn test_try_variable_bytes_no_max_with_padding() {
+        let mut buf = BytesMut::new();
+        buf.put_u32(6); // Len=8
+        buf.put([1, 2, 3, 4, 5, 6, 0, 0].as_ref());
+        let mut buf = buf.freeze();
+
+        let got = buf.try_variable_bytes(None).unwrap();
+
+        assert_eq!(got.len(), 6);
+        assert_eq!(got.as_ref(), &[1, 2, 3, 4, 5, 6]);
+
+        assert_eq!(buf.as_ref(), &[]);
+        assert_eq!(buf.remaining(), 0);
     }
 }

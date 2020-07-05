@@ -249,10 +249,29 @@ locker: locker4,
         r#"
 			struct stateid4 {
 					uint32_t        seqid;
-					opaque          other[NFS4_OTHER_SIZE];
+					opaque          other[3];
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
+seqid: u32,
+other: T,
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_fixed_array_const,
+        r#"
+            const SIZE = 3;
+			struct stateid4 {
+					uint32_t        seqid;
+					opaque          other[SIZE];
+			};
+		"#,
+        r#"const SIZE: u32 = 3;
+#[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
 seqid: u32,
@@ -266,10 +285,29 @@ other: T,
         r#"
 			struct nfs_client_id4 {
 					verifier4       verifier;
-					opaque          id<NFS4_OPAQUE_LIMIT>;
+					opaque          id<3>;
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct nfs_client_id4<T> where T: AsRef<[u8]> + Debug {
+verifier: verifier4,
+id: T,
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_variable_array_with_max_const,
+        r#"
+            const SIZE = 3;
+			struct nfs_client_id4 {
+					verifier4       verifier;
+					opaque          id<SIZE>;
+			};
+		"#,
+        r#"const SIZE: u32 = 3;
+#[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct nfs_client_id4<T> where T: AsRef<[u8]> + Debug {
 verifier: verifier4,
