@@ -172,53 +172,60 @@ fn print_decode_array<'a, W>(
 where
     W: std::fmt::Write,
 {
+    // Print a fixed-size array.
+    let print_fixed = |w: &mut W, t: &BasicType, size: u32| -> Result<()> {
+        match t {
+            BasicType::Opaque => write!(w, "v.try_bytes({})?", size)?,
+            BasicType::String => unreachable!("unexpected fixed length string"),
+            _ => {
+                writeln!(w, "[")?;
+                for _i in 0..size {
+                    print_decode_field(w, t, type_index)?;
+                    writeln!(w, "?,")?;
+                }
+                write!(w, "]")?;
+            }
+        }
+        Ok(())
+    };
+
+    // Print a length-prefixed variable sized array, or a string with a maximum value.
+    let print_variable = |w: &mut W, t: &BasicType, size: Option<u32>| -> Result<()> {
+        let mut type_str = t.to_string();
+
+        if generic_index.contains(type_str.as_str()) {
+            type_str = format!("{}<Bytes>", type_str);
+        };
+
+        let size = size
+            .map(|s| format!("Some({})", s))
+            .unwrap_or("None".to_string());
+
+        match t {
+            BasicType::Opaque => write!(w, "v.try_variable_bytes({})?", size)?,
+            BasicType::String => write!(w, "v.try_string({})?", size)?,
+            _ => write!(w, "v.try_variable_array::<{}>({})?", type_str, size)?,
+        };
+
+        Ok(())
+    };
+
     match t {
         ArrayType::None(t) => {
             print_decode_field(w, t, type_index)?;
             write!(w, "?")?;
         }
-        ArrayType::FixedSize(t, ArraySize::Known(size)) => {
-            if let BasicType::Opaque = t {
-                write!(w, "v.try_bytes({})?", size)?;
-                return Ok(());
-            };
-
-            writeln!(w, "[")?;
-            for _i in 0..*size {
-                print_decode_field(w, t, type_index)?;
-                writeln!(w, "?,")?;
-            }
-            write!(w, "]")?;
-        }
+        ArrayType::FixedSize(t, ArraySize::Known(size)) => print_fixed(w, t, *size)?,
         ArrayType::FixedSize(t, ArraySize::Constant(size)) => {
             // Try and resolve the constant value
             let size = constant_index
                 .get(size.as_str())
                 .ok_or(format!("unknown constant {}", size))?;
 
-            if let BasicType::Opaque = t {
-                write!(w, "v.try_bytes({})?", size)?;
-                return Ok(());
-            };
-
-            writeln!(w, "[")?;
-            for _i in 0..size.parse()? {
-                print_decode_field(w, t, type_index)?;
-                writeln!(w, "?,")?;
-            }
-            write!(w, "]")?;
+            print_fixed(w, t, size.parse()?)?
         }
         ArrayType::VariableSize(t, Some(ArraySize::Known(size))) => {
-            let mut type_str = t.to_string();
-
-            if generic_index.contains(type_str.as_str()) {
-                type_str = format!("{}<Bytes>", type_str);
-            };
-
-            match t {
-                BasicType::Opaque => write!(w, "v.try_variable_bytes(Some({}))?", size)?,
-                _ => write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?,
-            }
+            print_variable(w, t, Some(*size))?
         }
         ArrayType::VariableSize(t, Some(ArraySize::Constant(size))) => {
             // Try and resolve the constant value
@@ -226,28 +233,10 @@ where
                 .get(size.as_str())
                 .ok_or("unknown constant")?;
 
-            let mut type_str = t.to_string();
-
-            if generic_index.contains(type_str.as_str()) {
-                type_str = format!("{}<Bytes>", type_str);
-            };
-
-            match t {
-                BasicType::Opaque => write!(w, "v.try_variable_bytes(Some({}))?", size)?,
-                _ => write!(w, "v.try_variable_array::<{}>(Some({}))?", type_str, size)?,
-            }
+            print_variable(w, t, Some(size.parse()?))?;
         }
         ArrayType::VariableSize(t, None) => {
-            let mut type_str = t.to_string();
-
-            if generic_index.contains(type_str.as_str()) {
-                type_str = format!("{}<Bytes>", type_str);
-            };
-
-            match t {
-                BasicType::Opaque => write!(w, "v.try_variable_bytes(None)?")?,
-                _ => write!(w, "v.try_variable_array::<{}>(None)?", type_str)?,
-            }
+            print_variable(w, t, None)?;
         }
     };
 
@@ -386,7 +375,7 @@ d_c: v.try_bytes(3)?,
 				string c<42>;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small<Bytes> {
+        r#"impl TryFrom<Bytes> for small {
 type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {

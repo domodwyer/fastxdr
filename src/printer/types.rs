@@ -39,6 +39,7 @@ pub fn print_types<W: std::fmt::Write>(
                 // so, append <T> for the AsRef.
                 match f.field_value.unwrap_array() {
                     BasicType::Opaque => write!(w, "T")?,
+                    BasicType::String => write!(w, "String")?,
                     BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
                         write!(w, "{}<T>", i.as_ref())?
                     }
@@ -66,6 +67,7 @@ pub fn print_types<W: std::fmt::Write>(
 
                 match case.field_value.unwrap_array() {
                     BasicType::Opaque => write!(w, "T")?,
+                    BasicType::String => write!(w, "String")?,
                     BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
                         write!(w, "{}<T>", i.as_ref())?
                     }
@@ -345,8 +347,26 @@ data: T,
         r#"#[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct clientaddr4 {
-r_netid: Vec<String>,
-r_addr: Vec<String>,
+r_netid: String,
+r_addr: String,
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_string_max_len,
+        r#"
+			struct clientaddr4 {
+					/* see struct rpcb in RFC 1833 */
+					string r_netid<42>;       /* network id */
+					string r_addr<24>;        /* universal address */
+			};
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct clientaddr4 {
+r_netid: String,
+r_addr: String,
 }
 "#
     );
