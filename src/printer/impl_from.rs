@@ -29,7 +29,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                     // 		match v.try_i32()? {
                     // 			0 => None,
                     // 			1 => Some(Box::new(TYPE::try_from(v)?)),
-                    // 			d => return Err(Error::UnknownVariant(d)),
+                    // 			d => return Err(Error::UnknownVariant(d as i32)),
                     // 		}
                     writeln!(w, "{{ match v.try_u32()? {{")?;
                     writeln!(w, "0 => None,")?;
@@ -103,7 +103,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                 print_decode_array(w, &d.field_value, type_index, constant_index, generic_index)?;
                 writeln!(w, "),")?;
             } else {
-                writeln!(w, "d => return Err(Error::UnknownVariant(d)),")?;
+                writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
             }
 
             writeln!(w, "}})")?;
@@ -111,8 +111,16 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
             Ok(())
         })?,
 
-        // TODO: enum try_from()
-        Node::Typedef(_) | Node::Constant(_) | Node::Enum(_) => return Ok(()),
+        Node::Enum(v) => print_try_from(w, v.name.as_str(), generic_index, |w| {
+            writeln!(w, "Ok(match v.try_i32()? {{")?;
+            for variant in v.variants.iter() {
+                writeln!(w, "{} => Self::{},", variant.value, variant.name)?;
+            }
+            writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),\n}})")?;
+            Ok(())
+        })?,
+
+        Node::Typedef(_) | Node::Constant(_) => return Ok(()),
 
         Node::Ident(_)
         | Node::Type(_)
@@ -267,7 +275,7 @@ where
             Some(ConcreteType::Basic(ref b)) => return print_decode_field(w, b, type_index),
             Some(ConcreteType::Struct(s)) => write!(w, "{}::try_from(v)", s.name())?,
             Some(ConcreteType::Union(u)) => write!(w, "{}::try_from(v)", u.name())?,
-            Some(ConcreteType::Enum(_e)) => write!(w, "v.try_i32()")?,
+            Some(ConcreteType::Enum(e)) => write!(w, "{}::try_from(v)", e.name)?,
             None => return Err(format!("unresolvable type {}", c.as_ref()).into()),
         },
     };
@@ -650,7 +658,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -685,7 +693,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_variable_bytes(None)?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -719,7 +727,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::name(v.try_u64()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -745,7 +753,7 @@ let status = v.try_u32()?;
 Ok(match status {
 0x800 => Self::resok4(v.try_u32()?),
 2 => Self::name(v.try_u64()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -766,15 +774,26 @@ d => return Err(Error::UnknownVariant(d)),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<Bytes> for Status {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(match v.try_i32()? {
+1 => Self::MODE4_SUID,
+2 => Self::MODE4_OTHER,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_GETATTR4res {
 type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(v.try_u32()?),
+Status::MODE4_SUID => Self::resok4(v.try_u32()?),
 2 => Self::name(v.try_u64()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -799,7 +818,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::type(v.try_u64()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -826,7 +845,7 @@ Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::name(v.try_u64()?),
 3 => Self::name(v.try_u64()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -902,7 +921,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -931,7 +950,7 @@ Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -956,7 +975,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -983,7 +1002,7 @@ Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 3 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1020,7 +1039,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(simple::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1048,7 +1067,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_u32()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1060,7 +1079,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(my_union::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1088,7 +1107,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_variable_bytes(None)?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1100,7 +1119,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(my_union::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1129,7 +1148,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_u32()?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1141,7 +1160,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(my_union::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1170,7 +1189,7 @@ fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_variable_bytes(None)?),
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1182,7 +1201,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(my_union::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1220,7 +1239,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(small::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1258,7 +1277,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(small::try_from(v)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1284,7 +1303,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1310,7 +1329,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_variable_bytes(None)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1335,7 +1354,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1360,7 +1379,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_variable_bytes(None)?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1386,7 +1405,7 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1411,7 +1430,7 @@ let type_v = v.try_u32()?;
 Ok(match type_v {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1433,15 +1452,26 @@ d => return Err(Error::UnknownVariant(d)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for settime4 {
+        r#"impl TryFrom<Bytes> for time_how4 {
 type Error = Error;
 
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-let set_it = v.try_i32()?;
+Ok(match v.try_i32()? {
+0 => Self::SET_TO_SERVER_TIME4,
+1 => Self::SET_TO_CLIENT_TIME4,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for settime4 {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let set_it = time_how4::try_from(v)?;
 Ok(match set_it {
-1 => Self::time(v.try_u32()?),
+time_how4::SET_TO_CLIENT_TIME4 => Self::time(v.try_u32()?),
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d)),
+d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1663,9 +1693,6 @@ a: v.try_variable_array::<other>(Some(42))?,
 "#
     );
 
-    // TODO: array of unions
-    // TODO: generic variants
-
     test_convert!(
         test_variable_array_max_const,
         r#"
@@ -1849,8 +1876,304 @@ a: v.try_variable_array::<other<Bytes>>(Some(42))?,
 }
 "#
     );
+
+    test_convert!(
+        test_struct_nested_enum,
+        r#"
+            enum a_status {
+                ZERO          = 0,
+                ONE           = 1
+            };
+
+            struct DELEGPURGE4res {
+                a_status        status;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for a_status {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(match v.try_i32()? {
+0 => Self::ZERO,
+1 => Self::ONE,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for DELEGPURGE4res {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(DELEGPURGE4res {
+status: a_status::try_from(v)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_typedef_enum,
+        r#"
+            typedef a_status alias;
+            enum a_status {
+                ZERO          = 0,
+                ONE           = 1
+            };
+
+            struct DELEGPURGE4res {
+                alias        status;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for a_status {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(match v.try_i32()? {
+0 => Self::ZERO,
+1 => Self::ONE,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for DELEGPURGE4res {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(DELEGPURGE4res {
+status: a_status::try_from(v)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_typedef_array_fixed_union_generic,
+        r#"
+            typedef opaque alias;
+            union u_type_name switch (unsigned int s) {
+                case 1:    alias some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray[2];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: [
+u_type_name::try_from(v)?,
+u_type_name::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_typedef_array_variable_max_union_generic,
+        r#"
+            typedef opaque alias;
+            union u_type_name switch (unsigned int s) {
+                case 1:    alias some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray<42>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_typedef_array_variable_no_max_union_generic,
+        r#"
+            typedef opaque alias;
+            union u_type_name switch (unsigned int s) {
+                case 1:    alias some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray<>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_array_fixed_union_generic,
+        r#"
+            union u_type_name switch (unsigned int s) {
+                case 1:    opaque some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray[2];
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: [
+u_type_name::try_from(v)?,
+u_type_name::try_from(v)?,
+],
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_array_variable_max_union_generic,
+        r#"
+            union u_type_name switch (unsigned int s) {
+                case 1:    opaque some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray<42>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_array_variable_no_max_union_generic,
+        r#"
+            union u_type_name switch (unsigned int s) {
+                case 1:    opaque some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray<>;
+            };
+        "#,
+        r#"impl TryFrom<Bytes> for u_type_name<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::some_var(v.try_variable_bytes(None)?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+type Error = Error;
+
+fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+Ok(CB_COMPOUND4res {
+resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
+})
+}
+}
+"#
+    );
+
+    //     test_convert!(
+    //         test_struct_typedef_array_generic,
+    //         r#"
+    //             typedef opaque alias;
+    //             struct small {
+    //                 alias   field<>;
+    //             };
+    //         "#,
+    //         r#"impl TryFrom<Bytes> for small<Bytes> {
+    // type Error = Error;
+
+    // fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+    // Ok(small {
+    // resarray: v.try_variable_bytes(None)?,
+    // })
+    // }
+    // }
+    // "#
+    //     );
 }
 
-// TODO: test_variable_array_max_const_struct_generic
-// TODO: test_variable_array_max_known_struct_generic
-// TODO: test_variable_array_no_max_struct_generic
+// TODO: typedefs as types
