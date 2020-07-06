@@ -46,6 +46,31 @@ where
             Self::VariableSize(t, _) => t,
         }
     }
+
+    pub fn write_with_bounds<S, W>(&self, f: &mut W, b: Option<&[S]>) -> std::fmt::Result
+    where
+        S: AsRef<str>,
+        W: std::fmt::Write,
+    {
+        let bounds = b
+            .map(|bounds| {
+                format!(
+                    "<{}>",
+                    bounds
+                        .iter()
+                        .map(|b| b.as_ref())
+                        .collect::<Vec<&str>>()
+                        .join(", ")
+                )
+            })
+            .unwrap_or("".to_string());
+
+        match self {
+            Self::None(t) => write!(f, "{}{}", t, bounds),
+            Self::FixedSize(t, s) => write!(f, "[{}{}; {}]", t, bounds, s),
+            Self::VariableSize(t, _) => write!(f, "Vec<{}{}>", t, bounds),
+        }
+    }
 }
 
 impl<T> std::fmt::Display for ArrayType<T>
@@ -53,10 +78,6 @@ where
     T: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::None(t) => t.fmt(f),
-            Self::FixedSize(t, s) => write!(f, "[{}; {}]", t, s),
-            Self::VariableSize(t, _) => write!(f, "Vec<{}>", t),
-        }
+        self.write_with_bounds::<&str, _>(f, None)
     }
 }

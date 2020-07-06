@@ -41,7 +41,8 @@ pub fn print_types<W: std::fmt::Write>(
                     BasicType::Opaque => write!(w, "T")?,
                     BasicType::String => write!(w, "String")?,
                     BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
-                        write!(w, "{}<T>", i.as_ref())?
+                        f.field_value
+                            .write_with_bounds(w, Some(vec!["T"].as_ref()))?;
                     }
                     _ => write!(w, "{}", f.field_value)?,
                 }
@@ -215,6 +216,29 @@ pub enum createtype4 {
 linkdata(linktext4),
 devdata(specdata4),
 Void,
+}
+"#
+    );
+
+    test_convert!(
+        test_struct_nested_to_array_variable_max_union_generic,
+        r#"
+            union u_type_name switch (unsigned int s) {
+                case 1:    opaque some_var;
+            };
+            struct CB_COMPOUND4res {
+                u_type_name   resarray<42>;
+            };
+        "#,
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub enum u_type_name<T> where T: AsRef<[u8]> + Debug {
+some_var(T),
+}
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct CB_COMPOUND4res<T> where T: AsRef<[u8]> + Debug {
+resarray: Vec<u_type_name<T>>,
 }
 "#
     );
