@@ -23,7 +23,7 @@ pub fn build_constant_index<'a>(ast: &'a Node) -> BTreeMap<&'a str, String> {
                     // become `Status::NFS_OK`.
                     for v in e.variants.iter() {
                         if case_values
-                            .insert(v.name.as_str(), format!("{}", v.value))
+                            .insert(v.name.as_str(), format!("{}::{}", e.name, v.name.as_str()))
                             .is_some()
                         {
                             panic!("duplicate case keys {}", v.name.as_str());
