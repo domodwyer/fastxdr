@@ -16,6 +16,9 @@ pub use node::*;
 mod array;
 pub use array::*;
 
+mod typedef;
+pub use typedef::*;
+
 pub trait CompoundType {
     fn inner_types(&self) -> Vec<&ArrayType<BasicType>>;
     fn contains_opaque(&self) -> bool;

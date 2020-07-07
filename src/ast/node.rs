@@ -18,7 +18,7 @@ pub enum Node<'a> {
     Array(Vec<Node<'a>>),
     ArrayVariable(&'a str),
     ArrayFixed(&'a str),
-    Typedef(Vec<Node<'a>>),
+    Typedef(Typedef<'a>),
     Constant(Vec<Node<'a>>),
     Enum(Enum),
     EnumVariant(Vec<Node<'a>>),
@@ -49,7 +49,6 @@ impl<'a> Node<'a> {
             Self::StructDataField(v) => v,
             Self::UnionDataField(v) => v,
             Self::Array(v) => v,
-            Self::Typedef(v) => v,
             Self::Constant(v) => v,
             Self::EnumVariant(v) => v,
             Self::Root(v) => v,
@@ -89,7 +88,7 @@ pub(crate) fn walk<'a>(ast: Pair<'a, Rule>) -> Result<Node, Box<dyn std::error::
 
     let x = match ast.as_rule() {
         Rule::item => Node::Root(collect_values(ast)),
-        Rule::typedef => Node::Typedef(collect_values(ast)),
+        Rule::typedef => Node::Typedef(Typedef::new(collect_values(ast))),
         Rule::constant => Node::Constant(collect_values(ast)),
         Rule::ident | Rule::ident_const | Rule::ident_value => {
             if let Ok(t) = BasicType::try_from(ast.as_str()) {

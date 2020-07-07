@@ -99,18 +99,23 @@ pub fn print_types<W: std::fmt::Write>(
         Node::Typedef(v) => {
             // No typedefs to self - this occurs because the ident/type values
             // convert common types directly.
-            if v[0].ident_str() == v[1].ident_str() {
+            if v.target.as_str() == v.alias.as_str() {
                 return Ok(());
             }
 
-            write!(w, "type {}", v[1].ident_str())?;
-            if generic_index.contains(v[0].ident_str()) || v[0].ident_str() == "T" {
-                write!(w, "<T>")?;
+            writeln!(w, "{}\n#[repr(C)]", DERIVE)?;
+            write!(w, "struct {}", v.alias.as_str())?;
+            if generic_index.contains(v.target.as_str()) || v.target.as_str() == "T" {
+                write!(
+                    w,
+                    "<{}>",
+                    TRAIT_BOUNDS.split("where").skip(1).next().unwrap_or("")
+                )?;
             }
-            if generic_index.contains(v[0].ident_str()) {
-                writeln!(w, " = {}<T>;", v[0].ident_str())?;
+            if generic_index.contains(v.target.as_str()) {
+                writeln!(w, "({}<T>);", v.target.as_str())?;
             } else {
-                writeln!(w, " = {};", v[0].ident_str())?;
+                writeln!(w, "({});", v.target.as_str())?;
             }
         }
         Node::Array(_)

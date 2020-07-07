@@ -25,7 +25,7 @@ pub fn build_generic_index<'a>(ast: &'a Node) -> GenericIndex<'a> {
         let name = match v {
             Node::Struct(v) => Some(v.name()),
             Node::Union(v) => Some(v.name()),
-            Node::Typedef(v) => Some(v[1].ident_str()),
+            Node::Typedef(v) => Some(v.alias.as_str()),
             _ => None,
         };
 
@@ -58,7 +58,12 @@ pub fn build_generic_index<'a>(ast: &'a Node) -> GenericIndex<'a> {
                 _ => false,
             }),
 
-            Node::Root(v) | Node::Typedef(v) => v.iter().fold(false, |mut acc, v| {
+            Node::Typedef(v) => match v.target {
+                BasicType::Opaque => true,
+                _ => index.contains(v.target.as_str()),
+            },
+
+            Node::Root(v) => v.iter().fold(false, |mut acc, v| {
                 if recurse(v, index) {
                     acc = true;
                 }

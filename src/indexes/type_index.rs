@@ -25,19 +25,15 @@ impl<'a> TypeIndex<'a> {
             for item in r.iter() {
                 match item {
                     Node::Typedef(v) => {
-                        let new_type = v[1].ident_str();
+                        let new_type = v.alias.as_str();
                         // Try and resolve the original type to a basic type
-                        match &v[0] {
-                            Node::Type(BasicType::Ident(c)) => {
+                        match &v.target {
+                            BasicType::Ident(c) => {
                                 // Idents need resolving later
                                 unresolved.insert(new_type, c.as_ref());
                             }
-                            Node::Type(ref t) => {
+                            t => {
                                 resolved.insert(new_type, ConcreteType::Basic(t.to_owned()));
-                            }
-                            _ => {
-                                // Otherwise retry resolving it later.
-                                unresolved.insert(new_type, v[0].ident_str());
                             }
                         }
                     }
