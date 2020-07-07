@@ -1,82 +1,53 @@
-use crate::ast::{BasicType, Enum, Node, Struct, Union};
+use crate::ast::{BasicType, Enum, Node, Struct, Typedef, Union};
 use std::collections::HashMap;
 
-pub struct TypeIndex<'a>(HashMap<&'a str, ConcreteType<'a>>);
+pub struct TypeIndex<'a>(HashMap<&'a str, AstType<'a>>);
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ConcreteType<'a> {
+pub enum AstType<'a> {
     Struct(&'a Struct<'a>),
     Union(&'a Union<'a>),
     Enum(&'a Enum),
     Basic(BasicType<'a>),
+    Typedef(Typedef<'a>),
 }
 
 impl<'a> TypeIndex<'a> {
     pub fn new(ast: &'a Node) -> Self {
-        // Resolved holds the <new name> -> <existing name> pairs for sucessfuly
-        // resolved typedef targets.
-        let mut resolved: HashMap<&'a str, ConcreteType> = HashMap::new();
-
-        // Not all targets can be resolved in the first pass - some are
-        // typedefs-of-typedefs, and some are typedefs to compound (struct) types.
-        let mut unresolved: HashMap<&'a str, &'a str> = HashMap::new();
+        // Resolved holds the <new name> -> <existing name> pairs for
+        // successfully resolved typedef targets.
+        let mut resolved: HashMap<&'a str, AstType> = HashMap::new();
 
         if let Node::Root(r) = ast {
             for item in r.iter() {
                 match item {
                     Node::Typedef(v) => {
-                        let new_type = v.alias.as_str();
+                        let alias = v.alias.as_str();
                         // Try and resolve the original type to a basic type
                         match &v.target {
-                            BasicType::Ident(c) => {
-                                // Idents need resolving later
-                                unresolved.insert(new_type, c.as_ref());
+                            BasicType::Ident(_) => {
+                                // Ident targets occur when v is part of a
+                                // typedef chain.
+                                resolved.insert(alias, AstType::Typedef(v.clone()));
                             }
                             t => {
-                                resolved.insert(new_type, ConcreteType::Basic(t.to_owned()));
+                                resolved.insert(alias, AstType::Basic(t.to_owned()));
                             }
                         }
                     }
                     Node::Struct(v) => {
-                        resolved.insert(v.name(), ConcreteType::Struct(v));
+                        resolved.insert(v.name(), AstType::Struct(v));
                     }
                     Node::Union(v) => {
-                        resolved.insert(v.name(), ConcreteType::Union(v));
+                        resolved.insert(v.name(), AstType::Union(v));
                     }
                     Node::Enum(v) => {
                         // Record the names of all compound types
-                        resolved.insert(&v.name, ConcreteType::Enum(v));
+                        resolved.insert(&v.name, AstType::Enum(v));
                     }
                     _ => continue,
                 };
             }
-        }
-
-        // Keep resolving types until there is no difference, flattening typedef
-        // chains and resolving aliases of compound types.
-        let mut last_len = 0;
-        while unresolved.len() > 0 {
-            unresolved.retain(|new, old| {
-                let got = {
-                    if let Some(res) = resolved.get(old) {
-                        Some(res.clone())
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(got) = got {
-                    resolved.insert(new, got);
-                    return false;
-                }
-
-                true
-            });
-
-            if last_len == unresolved.len() && unresolved.len() != 0 {
-                panic!("unable to resolve all typedefs")
-            }
-            last_len = unresolved.len();
         }
 
         TypeIndex(resolved)
@@ -84,7 +55,20 @@ impl<'a> TypeIndex<'a> {
 
     /// Returns the concrete type for `name`, chasing any typedef chains to the
     /// terminating type.
-    pub fn get_concrete<T: AsRef<str>>(&self, name: T) -> Option<&ConcreteType> {
+    pub fn get_concrete<T: AsRef<str>>(&self, name: T) -> Option<&AstType> {
+        let mut name = name.as_ref();
+        loop {
+            match self.0.get(name) {
+                Some(AstType::Typedef(i)) => {
+                    name = i.target.as_str();
+                }
+                v => return v,
+            }
+        }
+    }
+
+    /// Returns the `AstType` for `name`.
+    pub fn get<T: AsRef<str>>(&self, name: T) -> Option<&AstType> {
         self.0.get(name.as_ref())
     }
 }
@@ -96,8 +80,7 @@ mod tests {
     use pest::Parser;
 
     #[test]
-    #[should_panic(expected = "unable to resolve all typedefs")]
-    fn test_typedef_unresolveable() {
+    fn test_typedef_unresolvable() {
         let input = r#"
             typedef old new;
         "#;
@@ -105,7 +88,17 @@ mod tests {
         let mut ast = XDRParser::parse(Rule::item, input).unwrap();
         let ast = walk(ast.next().unwrap()).unwrap();
 
-        TypeIndex::new(&ast);
+        let index = TypeIndex::new(&ast);
+        assert_eq!(index.get("old"), None);
+        assert_eq!(
+            index.get("new").unwrap().clone(),
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("old".into()),
+                alias: BasicType::Ident("new".into()),
+            })
+        );
+        assert_eq!(index.get_concrete("old"), None);
+        assert_eq!(index.get_concrete("new"), None);
     }
 
     #[test]
@@ -137,9 +130,9 @@ mod tests {
         };
 
         let mut want = HashMap::new();
-        want.insert("s", ConcreteType::Struct(&r[0].unwrap_struct()));
-        want.insert("u", ConcreteType::Union(&r[1].unwrap_union()));
-        want.insert("e", ConcreteType::Enum(&r[2].unwrap_enum()));
+        want.insert("s", AstType::Struct(&r[0].unwrap_struct()));
+        want.insert("u", AstType::Union(&r[1].unwrap_union()));
+        want.insert("e", AstType::Enum(&r[2].unwrap_enum()));
 
         let got = TypeIndex::new(&ast);
 
@@ -158,9 +151,9 @@ mod tests {
         let ast = walk(ast.next().unwrap()).unwrap();
 
         let mut want = HashMap::new();
-        want.insert("A", ConcreteType::Basic(BasicType::U32));
-        want.insert("B", ConcreteType::Basic(BasicType::U64));
-        want.insert("C", ConcreteType::Basic(BasicType::U32));
+        want.insert("A", AstType::Basic(BasicType::U32));
+        want.insert("B", AstType::Basic(BasicType::U64));
+        want.insert("C", AstType::Basic(BasicType::U32));
 
         let got = TypeIndex::new(&ast);
 
@@ -177,21 +170,41 @@ mod tests {
         let mut ast = XDRParser::parse(Rule::item, input).unwrap();
         let ast = walk(ast.next().unwrap()).unwrap();
 
+        let typedef = AstType::Typedef(Typedef {
+            target: BasicType::Ident("A".into()),
+            alias: BasicType::Ident("B".into()),
+        });
+
         let mut want = HashMap::new();
-        want.insert("A", ConcreteType::Basic(BasicType::U32));
-        want.insert("B", ConcreteType::Basic(BasicType::U32));
+        want.insert("A", AstType::Basic(BasicType::U32));
+        want.insert("B", typedef.clone());
 
         let got = TypeIndex::new(&ast);
         assert_eq!(got.0, want);
+
+        assert_eq!(got.get("B"), Some(&typedef));
+        assert_eq!(
+            got.get("A").unwrap().clone(),
+            AstType::Basic(BasicType::U32)
+        );
+
+        assert_eq!(
+            got.get_concrete("B").unwrap().clone(),
+            AstType::Basic(BasicType::U32)
+        );
+        assert_eq!(
+            got.get_concrete("A").unwrap().clone(),
+            AstType::Basic(BasicType::U32)
+        );
     }
 
     #[test]
     fn test_compound_typedef_chain() {
         let input = r#"
-            struct mything {
+            struct thing {
                 u32 a;
             };
-            typedef mything A;
+            typedef thing A;
             typedef A B;
         "#;
 
@@ -206,9 +219,21 @@ mod tests {
         };
 
         let mut want = HashMap::new();
-        want.insert("A", ConcreteType::Struct(&r[0].unwrap_struct()));
-        want.insert("B", ConcreteType::Struct(&r[0].unwrap_struct()));
-        want.insert("mything", ConcreteType::Struct(&r[0].unwrap_struct()));
+        want.insert(
+            "A",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("thing".into()),
+                alias: BasicType::Ident("A".into()),
+            }),
+        );
+        want.insert(
+            "B",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("A".into()),
+                alias: BasicType::Ident("B".into()),
+            }),
+        );
+        want.insert("thing", AstType::Struct(&r[0].unwrap_struct()));
 
         assert_eq!(got.0, want);
     }
@@ -217,8 +242,8 @@ mod tests {
     fn test_compound_typedef_chain_reversed() {
         let input = r#"
             typedef A B;
-            typedef mything A;
-            struct mything {
+            typedef thing A;
+            struct thing {
                 u32 a;
             };
         "#;
@@ -234,9 +259,21 @@ mod tests {
         };
 
         let mut want = HashMap::new();
-        want.insert("B", ConcreteType::Struct(&r[2].unwrap_struct()));
-        want.insert("A", ConcreteType::Struct(&r[2].unwrap_struct()));
-        want.insert("mything", ConcreteType::Struct(&r[2].unwrap_struct()));
+        want.insert(
+            "B",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("A".into()),
+                alias: BasicType::Ident("B".into()),
+            }),
+        );
+        want.insert(
+            "A",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("thing".into()),
+                alias: BasicType::Ident("A".into()),
+            }),
+        );
+        want.insert("thing", AstType::Struct(&r[2].unwrap_struct()));
 
         assert_eq!(got.0, want);
     }
@@ -245,8 +282,8 @@ mod tests {
     fn test_typedef_compound_enum() {
         let input = r#"
             typedef A B;
-            typedef mything A;
-            enum mything {
+            typedef thing A;
+            enum thing {
                 A = 1
             };
         "#;
@@ -262,9 +299,21 @@ mod tests {
         };
 
         let mut want = HashMap::new();
-        want.insert("B", ConcreteType::Enum(&r[2].unwrap_enum()));
-        want.insert("A", ConcreteType::Enum(&r[2].unwrap_enum()));
-        want.insert("mything", ConcreteType::Enum(&r[2].unwrap_enum()));
+        want.insert(
+            "B",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("A".into()),
+                alias: BasicType::Ident("B".into()),
+            }),
+        );
+        want.insert(
+            "A",
+            AstType::Typedef(Typedef {
+                target: BasicType::Ident("thing".into()),
+                alias: BasicType::Ident("A".into()),
+            }),
+        );
+        want.insert("thing", AstType::Enum(&r[2].unwrap_enum()));
 
         assert_eq!(got.0, want);
     }

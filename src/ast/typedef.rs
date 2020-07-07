@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Typedef<'a> {
     pub target: BasicType<'a>,
     pub alias: BasicType<'a>,
