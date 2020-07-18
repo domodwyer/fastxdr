@@ -8,6 +8,7 @@ pub struct Typedef<'a> {
 
 impl<'a> Typedef<'a> {
     pub fn new(mut vs: Vec<Node<'a>>) -> Self {
+        // TODO: handle arrays in typedefs
         Self {
             target: match vs.remove(0) {
                 Node::Type(t) => t,

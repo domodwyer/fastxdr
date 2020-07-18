@@ -434,10 +434,47 @@ OPEN4_CREATE = 1,
 			typedef opaque          sec_oid4;
 			typedef utf8string      utf8str_cis;
 		"#,
-        r#"type acetype4 = u32;
-type utf8string<T> = T;
-type sec_oid4<T> = T;
-type utf8str_cis<T> = utf8string<T>;
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct acetype4(u32);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct utf8string< T: AsRef<[u8]> + Debug>(T);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct sec_oid4< T: AsRef<[u8]> + Debug>(T);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct utf8str_cis< T: AsRef<[u8]> + Debug>(utf8string<T>);
+"#
+    );
+
+    test_convert!(
+        test_struct_typedef_structs,
+        r#"
+            typedef uint32_t        acemask4;
+            typedef utf8string      utf8str_mixed;
+            typedef opaque  utf8string<>;
+            struct nfsace4 {
+                acemask4                access_mask;
+                utf8str_mixed           who;
+            };
+        "#,
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct acemask4(u32);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct utf8str_mixed< T: AsRef<[u8]> + Debug>(utf8string<T>);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct utf8string< T: AsRef<[u8]> + Debug>(T);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct nfsace4<T> where T: AsRef<[u8]> + Debug {
+access_mask: acemask4,
+who: utf8str_mixed<T>,
+}
 "#
     );
 
@@ -575,6 +612,25 @@ Void,
 #[repr(C)]
 pub struct entry4 {
 nextentry: Option<Box<entry4>>,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_array,
+        r#"
+            typedef small alias<>;
+			struct small {
+				uint32_t        id;
+			};
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+struct alias(Vec<small>);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct small {
+	id: u32,
 }
 "#
     );

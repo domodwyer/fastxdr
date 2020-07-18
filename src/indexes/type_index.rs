@@ -1,8 +1,6 @@
 use crate::ast::{BasicType, Enum, Node, Struct, Typedef, Union};
 use std::collections::HashMap;
 
-pub struct TypeIndex<'a>(HashMap<&'a str, AstType<'a>>);
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstType<'a> {
     Struct(&'a Struct<'a>),
@@ -11,6 +9,8 @@ pub enum AstType<'a> {
     Basic(BasicType<'a>),
     Typedef(Typedef<'a>),
 }
+
+pub struct TypeIndex<'a>(HashMap<&'a str, AstType<'a>>);
 
 impl<'a> TypeIndex<'a> {
     pub fn new(ast: &'a Node) -> Self {
@@ -24,16 +24,7 @@ impl<'a> TypeIndex<'a> {
                     Node::Typedef(v) => {
                         let alias = v.alias.as_str();
                         // Try and resolve the original type to a basic type
-                        match &v.target {
-                            BasicType::Ident(_) => {
-                                // Ident targets occur when v is part of a
-                                // typedef chain.
-                                resolved.insert(alias, AstType::Typedef(v.clone()));
-                            }
-                            t => {
-                                resolved.insert(alias, AstType::Basic(t.to_owned()));
-                            }
-                        }
+                        resolved.insert(alias, AstType::Typedef(v.clone()));
                     }
                     Node::Struct(v) => {
                         resolved.insert(v.name(), AstType::Struct(v));
@@ -51,20 +42,6 @@ impl<'a> TypeIndex<'a> {
         }
 
         TypeIndex(resolved)
-    }
-
-    /// Returns the concrete type for `name`, chasing any typedef chains to the
-    /// terminating type.
-    pub fn get_concrete<T: AsRef<str>>(&self, name: T) -> Option<&AstType> {
-        let mut name = name.as_ref();
-        loop {
-            match self.0.get(name) {
-                Some(AstType::Typedef(i)) => {
-                    name = i.target.as_str();
-                }
-                v => return v,
-            }
-        }
     }
 
     /// Returns the `AstType` for `name`.
@@ -97,8 +74,6 @@ mod tests {
                 alias: BasicType::Ident("new".into()),
             })
         );
-        assert_eq!(index.get_concrete("old"), None);
-        assert_eq!(index.get_concrete("new"), None);
     }
 
     #[test]
@@ -151,9 +126,27 @@ mod tests {
         let ast = walk(ast.next().unwrap()).unwrap();
 
         let mut want = HashMap::new();
-        want.insert("A", AstType::Basic(BasicType::U32));
-        want.insert("B", AstType::Basic(BasicType::U64));
-        want.insert("C", AstType::Basic(BasicType::U32));
+        want.insert(
+            "A",
+            AstType::Typedef(Typedef {
+                target: BasicType::U32,
+                alias: BasicType::Ident("A".into()),
+            }),
+        );
+        want.insert(
+            "B",
+            AstType::Typedef(Typedef {
+                target: BasicType::U64,
+                alias: BasicType::Ident("B".into()),
+            }),
+        );
+        want.insert(
+            "C",
+            AstType::Typedef(Typedef {
+                target: BasicType::U32,
+                alias: BasicType::Ident("C".into()),
+            }),
+        );
 
         let got = TypeIndex::new(&ast);
 
@@ -176,7 +169,13 @@ mod tests {
         });
 
         let mut want = HashMap::new();
-        want.insert("A", AstType::Basic(BasicType::U32));
+        want.insert(
+            "A",
+            AstType::Typedef(Typedef {
+                target: BasicType::U32,
+                alias: BasicType::Ident("A".into()),
+            }),
+        );
         want.insert("B", typedef.clone());
 
         let got = TypeIndex::new(&ast);
@@ -185,16 +184,10 @@ mod tests {
         assert_eq!(got.get("B"), Some(&typedef));
         assert_eq!(
             got.get("A").unwrap().clone(),
-            AstType::Basic(BasicType::U32)
-        );
-
-        assert_eq!(
-            got.get_concrete("B").unwrap().clone(),
-            AstType::Basic(BasicType::U32)
-        );
-        assert_eq!(
-            got.get_concrete("A").unwrap().clone(),
-            AstType::Basic(BasicType::U32)
+            AstType::Typedef(Typedef {
+                target: BasicType::U32,
+                alias: BasicType::Ident("A".into()),
+            })
         );
     }
 
