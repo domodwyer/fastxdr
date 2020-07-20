@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArraySize {
     Known(u32),
     Constant(String),
@@ -25,7 +25,7 @@ impl std::fmt::Display for ArraySize {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArrayType<T>
 where
     T: std::fmt::Display,

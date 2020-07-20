@@ -56,7 +56,7 @@ impl<'a> StructField<'a> {
             [Node::Type(r), Node::Type(BasicType::Ident(l)), Node::ArrayVariable(s)] => {
                 let size = match s.trim() {
                     "" => None,
-                    _ => Some(ArraySize::from(s)),
+                    s => Some(ArraySize::from(s)),
                 };
                 Self {
                     field_name: l.to_string(),

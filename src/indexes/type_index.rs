@@ -1,4 +1,4 @@
-use crate::ast::{BasicType, Enum, Node, Struct, Typedef, Union};
+use crate::ast::{Enum, Node, Struct, Typedef, Union};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -6,7 +6,6 @@ pub enum AstType<'a> {
     Struct(&'a Struct<'a>),
     Union(&'a Union<'a>),
     Enum(&'a Enum),
-    Basic(BasicType<'a>),
     Typedef(Typedef<'a>),
 }
 
@@ -22,7 +21,7 @@ impl<'a> TypeIndex<'a> {
             for item in r.iter() {
                 match item {
                     Node::Typedef(v) => {
-                        let alias = v.alias.as_str();
+                        let alias = v.alias.unwrap_array().as_str();
                         // Try and resolve the original type to a basic type
                         resolved.insert(alias, AstType::Typedef(v.clone()));
                     }
@@ -53,6 +52,7 @@ impl<'a> TypeIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{ArrayType, BasicType};
     use crate::{walk, Rule, XDRParser};
     use pest::Parser;
 
@@ -71,7 +71,7 @@ mod tests {
             index.get("new").unwrap().clone(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("old".into()),
-                alias: BasicType::Ident("new".into()),
+                alias: ArrayType::None(BasicType::Ident("new".into())),
             })
         );
     }
@@ -130,21 +130,21 @@ mod tests {
             "A",
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert(
             "B",
             AstType::Typedef(Typedef {
                 target: BasicType::U64,
-                alias: BasicType::Ident("B".into()),
+                alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
             "C",
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
-                alias: BasicType::Ident("C".into()),
+                alias: ArrayType::None(BasicType::Ident("C".into())),
             }),
         );
 
@@ -165,7 +165,7 @@ mod tests {
 
         let typedef = AstType::Typedef(Typedef {
             target: BasicType::Ident("A".into()),
-            alias: BasicType::Ident("B".into()),
+            alias: ArrayType::None(BasicType::Ident("B".into())),
         });
 
         let mut want = HashMap::new();
@@ -173,7 +173,7 @@ mod tests {
             "A",
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert("B", typedef.clone());
@@ -186,7 +186,7 @@ mod tests {
             got.get("A").unwrap().clone(),
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             })
         );
     }
@@ -216,14 +216,14 @@ mod tests {
             "A",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert(
             "B",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
-                alias: BasicType::Ident("B".into()),
+                alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert("thing", AstType::Struct(&r[0].unwrap_struct()));
@@ -256,14 +256,14 @@ mod tests {
             "B",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
-                alias: BasicType::Ident("B".into()),
+                alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
             "A",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert("thing", AstType::Struct(&r[2].unwrap_struct()));
@@ -296,14 +296,14 @@ mod tests {
             "B",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
-                alias: BasicType::Ident("B".into()),
+                alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
             "A",
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
-                alias: BasicType::Ident("A".into()),
+                alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert("thing", AstType::Enum(&r[2].unwrap_enum()));

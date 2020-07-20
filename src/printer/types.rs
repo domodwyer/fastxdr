@@ -1,5 +1,5 @@
 use super::SafeName;
-use crate::ast::{BasicType, Node};
+use crate::ast::{ArrayType, BasicType, Node};
 use crate::indexes::GenericIndex;
 use crate::{Result, DERIVE, TRAIT_BOUNDS};
 
@@ -99,23 +99,40 @@ pub fn print_types<W: std::fmt::Write>(
         Node::Typedef(v) => {
             // No typedefs to self - this occurs because the ident/type values
             // convert common types directly.
-            if v.target.as_str() == v.alias.as_str() {
+            if v.target == *v.alias.unwrap_array() {
                 return Ok(());
             }
 
+            // For typedefs, the array identifier is defined on the alias.
+            //
+            // Wrap the target in the same array as the alias to generate the
+            // array container for the target.
+            let target = match &v.alias {
+                ArrayType::None(_) => ArrayType::None(&v.target),
+                ArrayType::FixedSize(_, s) => ArrayType::FixedSize(&v.target, s.clone()),
+                ArrayType::VariableSize(_, s) => ArrayType::VariableSize(&v.target, s.clone()),
+            };
+
             writeln!(w, "{}\n#[repr(C)]", DERIVE)?;
-            write!(w, "struct {}", v.alias.as_str())?;
-            if generic_index.contains(v.target.as_str()) || v.target.as_str() == "T" {
+            write!(w, "pub struct {}", v.alias.unwrap_array().as_str())?;
+            if generic_index.contains(v.target.as_str()) || v.target.is_opaque() {
                 write!(
                     w,
                     "<{}>",
-                    TRAIT_BOUNDS.split("where").skip(1).next().unwrap_or("")
+                    TRAIT_BOUNDS
+                        .split("where")
+                        .skip(1)
+                        .next()
+                        .unwrap_or("")
+                        .trim()
                 )?;
             }
             if generic_index.contains(v.target.as_str()) {
-                writeln!(w, "({}<T>);", v.target.as_str())?;
+                write!(w, " (")?;
+                target.write_with_bounds(w, Some(&["T"]))?;
+                writeln!(w, ");")?;
             } else {
-                writeln!(w, "({});", v.target.as_str())?;
+                writeln!(w, "({});", target)?;
             }
         }
         Node::Array(_)
@@ -439,13 +456,13 @@ OPEN4_CREATE = 1,
 struct acetype4(u32);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8string< T: AsRef<[u8]> + Debug>(T);
+struct utf8string<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct sec_oid4< T: AsRef<[u8]> + Debug>(T);
+struct sec_oid4<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8str_cis< T: AsRef<[u8]> + Debug>(utf8string<T>);
+struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
 "#
     );
 
@@ -465,10 +482,10 @@ struct utf8str_cis< T: AsRef<[u8]> + Debug>(utf8string<T>);
 struct acemask4(u32);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8str_mixed< T: AsRef<[u8]> + Debug>(utf8string<T>);
+struct utf8str_mixed<T: AsRef<[u8]> + Debug> (utf8string<T>);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8string< T: AsRef<[u8]> + Debug>(T);
+struct utf8string<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct nfsace4<T> where T: AsRef<[u8]> + Debug {
@@ -626,11 +643,30 @@ nextentry: Option<Box<entry4>>,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 #[repr(C)]
-struct alias(Vec<small>);
+pub struct alias(Vec<small>);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct small {
-	id: u32,
+id: u32,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_array_generic,
+        r#"
+            typedef small alias<>;
+			struct small {
+				opaque        id;
+			};
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct alias<T: AsRef<[u8]> + Debug> (Vec<small<T>>);
+#[derive(Debug, PartialEq)]
+#[repr(C)]
+pub struct small<T> where T: AsRef<[u8]> + Debug {
+id: T,
 }
 "#
     );

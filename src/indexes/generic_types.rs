@@ -25,7 +25,7 @@ pub fn build_generic_index<'a>(ast: &'a Node) -> GenericIndex<'a> {
         let name = match v {
             Node::Struct(v) => Some(v.name()),
             Node::Union(v) => Some(v.name()),
-            Node::Typedef(v) => Some(v.alias.as_str()),
+            Node::Typedef(v) => Some(v.alias.unwrap_array().as_str()),
             _ => None,
         };
 
