@@ -52,6 +52,13 @@ impl<'a> BasicType<'a> {
             _ => name,
         }
     }
+
+    pub fn is_opaque(&self) -> bool {
+        match self {
+            Self::Opaque => true,
+            _ => false,
+        }
+    }
 }
 
 impl<'a> std::fmt::Display for BasicType<'a> {

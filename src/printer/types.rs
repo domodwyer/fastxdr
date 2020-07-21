@@ -453,16 +453,16 @@ OPEN4_CREATE = 1,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 #[repr(C)]
-struct acetype4(u32);
+pub struct acetype4(u32);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8string<T: AsRef<[u8]> + Debug>(T);
+pub struct utf8string<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct sec_oid4<T: AsRef<[u8]> + Debug>(T);
+pub struct sec_oid4<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
+pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
 "#
     );
 
@@ -479,13 +479,13 @@ struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
         "#,
         r#"#[derive(Debug, PartialEq)]
 #[repr(C)]
-struct acemask4(u32);
+pub struct acemask4(u32);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8str_mixed<T: AsRef<[u8]> + Debug> (utf8string<T>);
+pub struct utf8str_mixed<T: AsRef<[u8]> + Debug> (utf8string<T>);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
-struct utf8string<T: AsRef<[u8]> + Debug>(T);
+pub struct utf8string<T: AsRef<[u8]> + Debug>(T);
 #[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct nfsace4<T> where T: AsRef<[u8]> + Debug {

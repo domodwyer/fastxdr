@@ -172,7 +172,8 @@ enum nfsstat4 {
  * Basic data types
  */
 typedef opaque  attrlist4<>;
-typedef uint32_t        bitmap4<>;
+typedef uint32_t bitmap_inner;
+typedef bitmap_inner        bitmap4<>;
 typedef uint64_t        changeid4;
 typedef uint64_t        clientid4;
 typedef uint32_t        count4;
@@ -761,9 +762,6 @@ struct exist_lock_owner4 {
         seqid4          lock_seqid;
 };
 
-// FIXED: missing bool defintions
-const TRUE = 1;
-const FALSE = 0;
 
 union locker4 switch (bool new_lock_owner) {
 case TRUE:

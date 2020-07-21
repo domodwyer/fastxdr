@@ -2,9 +2,9 @@
 //!
 //! Do NOT modify the generated file directly.
 
-#![allow(non_camel_case_types, dead_code)]
+#![allow(non_camel_case_types, dead_code, unused_mut)]
 
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, Bytes};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::mem::size_of;
@@ -189,7 +189,7 @@ impl DeserialiserExt for Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::BytesMut;
+    use bytes::{BufMut, BytesMut};
 
     #[derive(Debug, PartialEq)]
     #[repr(C)]

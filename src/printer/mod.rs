@@ -19,6 +19,7 @@ where
             | "let" | "loop" | "match" | "mod" | "move" | "mut" | "pub" | "ref" | "return"
             | "Self" | "self" | "static" | "struct" | "super" | "trait" | "true" | "type"
             | "union" | "unsafe" | "use" | "where" | "while" => write!(f, "{}_v", self.0.as_ref()),
+            "TRUE" | "FALSE" => write!(f, "{}", self.0.as_ref().to_lowercase()),
             _ => write!(f, "{}", self.0.as_ref()),
         }
     }
