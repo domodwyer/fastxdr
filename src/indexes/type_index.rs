@@ -1,5 +1,5 @@
 use crate::ast::{Enum, Node, Struct, Typedef, Union};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstType<'a> {
@@ -9,13 +9,13 @@ pub enum AstType<'a> {
     Typedef(Typedef<'a>),
 }
 
-pub struct TypeIndex<'a>(HashMap<&'a str, AstType<'a>>);
+pub struct TypeIndex<'a>(BTreeMap<&'a str, AstType<'a>>);
 
 impl<'a> TypeIndex<'a> {
     pub fn new(ast: &'a Node) -> Self {
         // Resolved holds the <new name> -> <existing name> pairs for
         // successfully resolved typedef targets.
-        let mut resolved: HashMap<&'a str, AstType> = HashMap::new();
+        let mut resolved: BTreeMap<&'a str, AstType> = BTreeMap::new();
 
         if let Node::Root(r) = ast {
             for item in r.iter() {
@@ -46,6 +46,10 @@ impl<'a> TypeIndex<'a> {
     /// Returns the `AstType` for `name`.
     pub fn get<T: AsRef<str>>(&self, name: T) -> Option<&AstType> {
         self.0.get(name.as_ref())
+    }
+
+    pub fn iter(&self) -> impl std::iter::Iterator<Item = &AstType<'a>> {
+        self.0.values()
     }
 }
 
@@ -104,7 +108,7 @@ mod tests {
             _ => panic!("not root"),
         };
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert("s", AstType::Struct(&r[0].unwrap_struct()));
         want.insert("u", AstType::Union(&r[1].unwrap_union()));
         want.insert("e", AstType::Enum(&r[2].unwrap_enum()));
@@ -112,6 +116,53 @@ mod tests {
         let got = TypeIndex::new(&ast);
 
         assert_eq!(got.0, want);
+    }
+
+    #[test]
+    fn test_iter() {
+        let input = r#"
+            struct s {
+                u32 a;
+            };
+            
+            union u switch (var_type var_name) {
+            case 1:
+                    case_type       case_var;
+            default:
+                    void;
+            };
+
+            enum e {
+                YES = 1,
+                NO = 2
+            };
+
+            typedef uint32_t A;
+        "#;
+
+        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
+        let ast = walk(ast.next().unwrap()).unwrap();
+
+        let got = TypeIndex::new(&ast);
+
+        let mut iter = got.iter();
+
+        assert!(match dbg!(iter.next()) {
+            Some(&AstType::Typedef(_)) => true,
+            _ => false,
+        });
+        assert!(match dbg!(iter.next()) {
+            Some(&AstType::Enum(_)) => true,
+            _ => false,
+        });
+        assert!(match dbg!(iter.next()) {
+            Some(&AstType::Struct(_)) => true,
+            _ => false,
+        });
+        assert!(match dbg!(iter.next()) {
+            Some(&AstType::Union(_)) => true,
+            _ => false,
+        });
     }
 
     #[test]
@@ -125,7 +176,7 @@ mod tests {
         let mut ast = XDRParser::parse(Rule::item, input).unwrap();
         let ast = walk(ast.next().unwrap()).unwrap();
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert(
             "A",
             AstType::Typedef(Typedef {
@@ -168,7 +219,7 @@ mod tests {
             alias: ArrayType::None(BasicType::Ident("B".into())),
         });
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert(
             "A",
             AstType::Typedef(Typedef {
@@ -211,7 +262,7 @@ mod tests {
             _ => panic!("not root"),
         };
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert(
             "A",
             AstType::Typedef(Typedef {
@@ -251,7 +302,7 @@ mod tests {
             _ => panic!("not root"),
         };
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert(
             "B",
             AstType::Typedef(Typedef {
@@ -291,7 +342,7 @@ mod tests {
             _ => panic!("not root"),
         };
 
-        let mut want = HashMap::new();
+        let mut want = BTreeMap::new();
         want.insert(
             "B",
             AstType::Typedef(Typedef {
