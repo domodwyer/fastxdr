@@ -46,7 +46,6 @@ pub fn build_generic_index<'a>(ast: &'a Node) -> GenericIndex<'a> {
 
             // These Nodes can contain inner opaque types, or contain compound
             // types that themselves contain opaques.
-            // TODO: common trait for inner_types()
             Node::Struct(v) => v.inner_types().iter().any(|t| match t.unwrap_array() {
                 BasicType::Opaque => true,
                 BasicType::Ident(i) => index.contains(i.as_ref()),
@@ -79,7 +78,6 @@ pub fn build_generic_index<'a>(ast: &'a Node) -> GenericIndex<'a> {
             | Node::ArrayFixed(_) => false,
 
             // These nodes are not reachable in the tree
-            // TODO: don't have this variants
             Node::Ident(_)
             | Node::UnionDefault(_)
             | Node::UnionCase(_)
