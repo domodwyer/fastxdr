@@ -19,6 +19,25 @@ impl TypeResolve {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum TryFrom {
+    ByValue,
+    ByRef,
+}
+
+impl std::fmt::Display for TryFrom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                TryFrom::ByValue => "&mut *v",
+                TryFrom::ByRef => "&mut v",
+            }
+        )
+    }
+}
+
 pub fn print_impl_from<'a, W: std::fmt::Write>(
     mut w: W,
     generic_index: &GenericIndex<'a>,
@@ -27,129 +46,140 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
 ) -> Result<()> {
     for item in type_index.iter() {
         match item {
-            AstType::Struct(v) => print_try_from(&mut w, v.name.as_str(), generic_index, |w| {
-                writeln!(w, "Ok({} {{", v.name)?;
-                for f in v.fields.iter() {
-                    write!(w, "{}: ", SafeName(&f.field_name))?;
-                    if f.is_optional {
-                        // This field is an optional field
-                        //
-                        // Outputs:
-                        // 		match v.try_i32()? {
-                        // 			0 => None,
-                        // 			1 => Some(Box::new(TYPE::try_from(v.clone())?)),
-                        // 			d => return Err(Error::UnknownVariant(d as i32)),
-                        // 		}
-                        writeln!(w, "{{ match v.try_u32()? {{")?;
-                        writeln!(w, "0 => None,")?;
-                        writeln!(
-                            w,
-                            "1 => Some(Box::new({}::try_from(v.clone())?)),",
-                            f.field_value.unwrap_array()
-                        )?;
-                        writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
-                        writeln!(w, "}}}},")?;
-                    } else {
-                        print_decode_array(
-                            w,
-                            &f.field_value,
-                            type_index,
-                            constant_index,
-                            generic_index,
-                            // Do not resolve the typedef to the target type - instead
-                            // call try_from on the newtype itself.
-                            TypeResolve::None,
-                        )?;
-                        writeln!(w, ",")?;
+            AstType::Struct(v) => {
+                print_try_from(&mut w, v.name.as_str(), generic_index, |w, try_from| {
+                    writeln!(w, "Ok({} {{", v.name)?;
+                    for f in v.fields.iter() {
+                        write!(w, "{}: ", SafeName(&f.field_name))?;
+                        if f.is_optional {
+                            // This field is an optional field
+                            //
+                            // Outputs:
+                            // 		match v.try_i32()? {
+                            // 			0 => None,
+                            // 			1 => Some(Box::new(TYPE::try_from(&mut v)?)),
+                            // 			d => return Err(Error::UnknownVariant(d as i32)),
+                            // 		}
+                            writeln!(w, "{{ match v.try_u32()? {{")?;
+                            writeln!(w, "0 => None,")?;
+                            writeln!(
+                                w,
+                                "1 => Some(Box::new({}::try_from({})?)),",
+                                f.field_value.unwrap_array(),
+                                try_from
+                            )?;
+                            writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
+                            writeln!(w, "}}}},")?;
+                        } else {
+                            print_decode_array(
+                                w,
+                                &f.field_value,
+                                type_index,
+                                constant_index,
+                                generic_index,
+                                // Do not resolve the typedef to the target type - instead
+                                // call try_from on the newtype itself.
+                                TypeResolve::None,
+                                try_from,
+                            )?;
+                            writeln!(w, ",")?;
+                        }
                     }
-                }
-                writeln!(w, "}})")?;
-                Ok(())
-            })?,
+                    writeln!(w, "}})")?;
+                    Ok(())
+                })?
+            }
 
-            AstType::Union(v) => print_try_from(&mut w, v.name.as_str(), generic_index, |w| {
-                write!(w, "let {} = ", SafeName(&v.switch.var_name))?;
-                print_decode_basic_type(
-                    w,
-                    &v.switch.var_type,
-                    type_index,
-                    TypeResolve::ChaseTypedefs,
-                )?;
-                writeln!(w, "?;")?;
+            AstType::Union(v) => {
+                print_try_from(&mut w, v.name.as_str(), generic_index, |w, try_from| {
+                    write!(w, "let {} = ", SafeName(&v.switch.var_name))?;
+                    print_decode_basic_type(
+                        w,
+                        &v.switch.var_type,
+                        type_index,
+                        TypeResolve::ChaseTypedefs,
+                        try_from,
+                    )?;
+                    writeln!(w, "?;")?;
 
-                writeln!(w, "Ok(match {} {{", SafeName(&v.switch.var_name))?;
-                for c in v.cases.iter() {
-                    // A single case statement may have many case values tied to it
-                    // if fallthrough values are used:
-                    //
-                    // 	case 1:
-                    // 	case 2:
-                    // 		// statement
-                    //
-                    for c_value in c.case_values.iter() {
-                        // The case value may be a declared constant or enum value.
+                    writeln!(w, "Ok(match {} {{", SafeName(&v.switch.var_name))?;
+                    for c in v.cases.iter() {
+                        // A single case statement may have many case values tied to it
+                        // if fallthrough values are used:
                         //
-                        // Lookup the value in the `constant_index`.
-                        let matcher = constant_index.get(c_value.as_str()).unwrap_or(c_value);
+                        // 	case 1:
+                        // 	case 2:
+                        // 		// statement
+                        //
+                        for c_value in c.case_values.iter() {
+                            // The case value may be a declared constant or enum value.
+                            //
+                            // Lookup the value in the `constant_index`.
+                            let matcher = constant_index.get(c_value.as_str()).unwrap_or(c_value);
 
-                        write!(w, "{} => Self::{}(", SafeName(matcher), c.field_name)?;
+                            write!(w, "{} => Self::{}(", SafeName(matcher), c.field_name)?;
+                            print_decode_array(
+                                w,
+                                &c.field_value,
+                                type_index,
+                                constant_index,
+                                generic_index,
+                                TypeResolve::None,
+                                try_from,
+                            )?;
+                            writeln!(w, "),")?;
+                        }
+                    }
+
+                    // There may also be several "void" cases
+                    for c in v.void_cases.iter() {
+                        let name = match c.as_str() {
+                            "default" => "_",
+                            v => &v,
+                        };
+                        writeln!(w, "{} => Self::Void,", name)?;
+                    }
+
+                    // Write a default case if present, else a catch all case that
+                    // returns an error.
+                    if let Some(ref d) = v.default {
+                        write!(w, "_ => Self::{}(", SafeName(&d.field_name))?;
                         print_decode_array(
                             w,
-                            &c.field_value,
+                            &d.field_value,
                             type_index,
                             constant_index,
                             generic_index,
-                            TypeResolve::None,
+                            TypeResolve::ChaseTypedefs,
+                            try_from,
                         )?;
                         writeln!(w, "),")?;
+                    } else {
+                        writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
                     }
-                }
 
-                // There may also be several "void" cases
-                for c in v.void_cases.iter() {
-                    let name = match c.as_str() {
-                        "default" => "_",
-                        v => &v,
-                    };
-                    writeln!(w, "{} => Self::Void,", name)?;
-                }
+                    writeln!(w, "}})")?;
 
-                // Write a default case if present, else a catch all case that
-                // returns an error.
-                if let Some(ref d) = v.default {
-                    write!(w, "_ => Self::{}(", SafeName(&d.field_name))?;
-                    print_decode_array(
-                        w,
-                        &d.field_value,
-                        type_index,
-                        constant_index,
-                        generic_index,
-                        TypeResolve::ChaseTypedefs,
-                    )?;
-                    writeln!(w, "),")?;
-                } else {
-                    writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
-                }
+                    Ok(())
+                })?
+            }
 
-                writeln!(w, "}})")?;
-
-                Ok(())
-            })?,
-
-            AstType::Enum(v) => print_try_from(&mut w, v.name.as_str(), generic_index, |w| {
-                writeln!(w, "Ok(match v.try_i32()? {{")?;
-                for variant in v.variants.iter() {
-                    writeln!(w, "{} => Self::{},", variant.value, variant.name)?;
-                }
-                writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),\n}})")?;
-                Ok(())
-            })?,
+            AstType::Enum(v) => {
+                print_try_from(&mut w, v.name.as_str(), generic_index, |w, _try_from| {
+                    writeln!(w, "Ok(match v.try_i32()? {{")?;
+                    for variant in v.variants.iter() {
+                        writeln!(w, "{} => Self::{},", variant.value, variant.name)?;
+                    }
+                    writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),\n}})")?;
+                    Ok(())
+                })?
+            }
 
             AstType::Typedef(v) => print_try_from(
                 &mut w,
                 v.alias.unwrap_array().as_str(),
                 generic_index,
-                |w| {
+                |w, try_from| {
                     write!(w, "Ok(Self(")?;
                     print_decode_array(
                         w,
@@ -158,6 +188,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
                         constant_index,
                         generic_index,
                         TypeResolve::ChaseTypedefs,
+                        try_from,
                     )?;
                     writeln!(w, "))")?;
                     Ok(())
@@ -173,7 +204,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write>(
 ///
 /// `func` should write the body of the `try_from` implementation to `w`, using
 /// `v` as the Bytes source.
-fn print_try_from<'a, W: std::fmt::Write, F: FnOnce(&mut W) -> Result<()>>(
+fn print_try_from<'a, W: std::fmt::Write, F: Fn(&mut W, TryFrom) -> Result<()>>(
     mut w: W,
     name: &str,
     generic_index: &GenericIndex,
@@ -192,7 +223,26 @@ type Error = Error;
 fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {{"#
     )?;
 
-    func(&mut w)?;
+    func(&mut w, TryFrom::ByRef)?;
+
+    writeln!(w, "}}\n}}")?;
+
+    //////////////////////////////////////////////////////////////////////
+
+    if generic_index.contains(name) {
+        write!(w, "impl TryFrom<&mut Bytes> for {}<Bytes>", name)?;
+    } else {
+        write!(w, r#"impl TryFrom<&mut Bytes> for {}"#, name)?;
+    }
+    writeln!(
+        w,
+        r#" {{
+type Error = Error;
+
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {{"#
+    )?;
+
+    func(&mut w, TryFrom::ByValue)?;
 
     writeln!(w, "}}\n}}")?;
 
@@ -206,6 +256,7 @@ fn print_decode_array<'a, W>(
     constant_index: &BTreeMap<&str, String>,
     generic_index: &GenericIndex<'a>,
     resolve_typedefs: TypeResolve,
+    try_from: TryFrom,
 ) -> Result<()>
 where
     W: std::fmt::Write,
@@ -218,7 +269,7 @@ where
             _ => {
                 writeln!(w, "[")?;
                 for _i in 0..size {
-                    print_decode_basic_type(w, t, type_index, resolve_typedefs)?;
+                    print_decode_basic_type(w, t, type_index, resolve_typedefs, try_from)?;
                     writeln!(w, "?,")?;
                 }
                 write!(w, "]")?;
@@ -264,7 +315,7 @@ where
 
     match t {
         ArrayType::None(t) => {
-            print_decode_basic_type(w, t, type_index, resolve_typedefs)?;
+            print_decode_basic_type(w, t, type_index, resolve_typedefs, try_from)?;
             write!(w, "?")?;
         }
         ArrayType::FixedSize(t, ArraySize::Known(size)) => print_fixed(w, t, *size)?,
@@ -305,6 +356,7 @@ fn print_decode_basic_type<'a, W>(
     t: &BasicType<'a>,
     type_index: &TypeIndex<'a>,
     resolve_typedefs: TypeResolve,
+    try_from: TryFrom,
 ) -> Result<()>
 where
     W: std::fmt::Write,
@@ -323,24 +375,30 @@ where
         // If typedefs should not be resolved to their targets (for struct
         // fields) just print a try_from() impl for the ident name.
         BasicType::Ident(c) if resolve_typedefs.skip_resolve() => {
-            write!(w, "{}::try_from(v.clone())", c)?
+            write!(w, "{}::try_from({})", c, try_from)?
         }
 
         // An ident may refer to a typedef, or a compound type.
         BasicType::Ident(c) => match type_index.get(c) {
-            Some(AstType::Struct(s)) => write!(w, "{}::try_from(v.clone())", s.name())?,
-            Some(AstType::Union(u)) => write!(w, "{}::try_from(v.clone())", u.name())?,
-            Some(AstType::Enum(e)) => write!(w, "{}::try_from(v.clone())", e.name)?,
+            Some(AstType::Struct(s)) => write!(w, "{}::try_from({})", s.name(), try_from)?,
+            Some(AstType::Union(u)) => write!(w, "{}::try_from({})", u.name(), try_from)?,
+            Some(AstType::Enum(e)) => write!(w, "{}::try_from({})", e.name, try_from)?,
 
             // If this typedef should not be chased, print the alias try_from() impl.
             Some(AstType::Typedef(t)) if resolve_typedefs.skip_resolve() => {
-                write!(w, "{}::try_from(v.clone())", t.alias)?
+                write!(w, "{}::try_from({})", t.alias, try_from)?
             }
 
             // Otherwise print the target's try_from, but only go one level down
             // the typedef chain.
             Some(AstType::Typedef(t)) => {
-                return print_decode_basic_type(w, &t.target, type_index, TypeResolve::None)
+                return print_decode_basic_type(
+                    w,
+                    &t.target,
+                    type_index,
+                    TypeResolve::None,
+                    try_from,
+                )
             }
 
             None => return Err(format!("unresolvable type {}", c.as_ref()).into()),
@@ -389,10 +447,10 @@ mod tests {
 				opaque i;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_u32()?,
 b: v.try_u64()?,
@@ -422,10 +480,10 @@ i: v.try_variable_bytes(None)?,
 				opaque d_c[SIZE];
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_bytes(None)?,
 b: v.try_variable_bytes(None)?,
@@ -448,10 +506,10 @@ d_c: v.try_bytes(3)?,
 				string c<42>;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_string(None)?,
 b: v.try_string(None)?,
@@ -472,23 +530,23 @@ c: v.try_string(Some(42))?,
 				other *a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: { match v.try_u32()? {
 0 => None,
-1 => Some(Box::new(other::try_from(v.clone())?)),
+1 => Some(Box::new(other::try_from(&mut v)?)),
 d => return Err(Error::UnknownOptionVariant(d)),
 }},
 })
@@ -504,14 +562,14 @@ d => return Err(Error::UnknownOptionVariant(d)),
 				small *a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: { match v.try_u32()? {
 0 => None,
-1 => Some(Box::new(small::try_from(v.clone())?)),
+1 => Some(Box::new(small::try_from(&mut v)?)),
 d => return Err(Error::UnknownOptionVariant(d)),
 }},
 })
@@ -527,10 +585,10 @@ d => return Err(Error::UnknownOptionVariant(d)),
 				unsigned int type;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 type_v: v.try_u32()?,
 })
@@ -549,21 +607,21 @@ type_v: v.try_u32()?,
 				other a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: other::try_from(v.clone())?,
+a: other::try_from(&mut v)?,
 })
 }
 }
@@ -580,21 +638,21 @@ a: other::try_from(v.clone())?,
 				other a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for other<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: other::try_from(v.clone())?,
+a: other::try_from(&mut v)?,
 })
 }
 }
@@ -612,28 +670,28 @@ a: other::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(other::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(other::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for other {
+impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -651,28 +709,28 @@ a: alias::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(other::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(other::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for other<Bytes> {
+impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -687,19 +745,19 @@ a: alias::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -714,19 +772,19 @@ a: alias::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -745,17 +803,17 @@ a: alias::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(my_union::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(my_union::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for my_union {
+impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -763,12 +821,12 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -787,17 +845,17 @@ a: alias::try_from(v.clone())?,
 				alias a;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for alias<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(my_union::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(my_union::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for my_union<Bytes> {
+impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_variable_bytes(None)?),
@@ -805,12 +863,12 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: alias::try_from(v.clone())?,
+a: alias::try_from(&mut v)?,
 })
 }
 }
@@ -827,10 +885,10 @@ a: alias::try_from(v.clone())?,
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -853,10 +911,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 0x800 => Self::resok4(v.try_u32()?),
@@ -882,10 +940,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 Status::MODE4_SUID => Self::resok4(v.try_u32()?),
@@ -894,10 +952,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for Status {
+impl TryFrom<&mut Bytes> for Status {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(match v.try_i32()? {
 1 => Self::MODE4_SUID,
 2 => Self::MODE4_OTHER,
@@ -918,10 +976,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				u64       type;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -944,10 +1002,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -970,10 +1028,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -995,10 +1053,10 @@ _ => Self::name(v.try_u64()?),
 				u64       name;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1021,10 +1079,10 @@ _ => Self::name(v.try_u64()?),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1049,10 +1107,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1075,10 +1133,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1101,10 +1159,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1130,22 +1188,22 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(simple::try_from(v.clone())?),
+1 => Self::resok4(simple::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for simple {
+impl TryFrom<&mut Bytes> for simple {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(simple {
 a: v.try_u32()?,
 })
@@ -1168,22 +1226,22 @@ a: v.try_u32()?,
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(my_union::try_from(v.clone())?),
+1 => Self::resok4(my_union::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for my_union {
+impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_u32()?),
@@ -1204,10 +1262,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				uint64_t       nope;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for my_union {
+        r#"impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_bool()?;
 Ok(match status {
 true => Self::ok(v.try_u64()?),
@@ -1233,22 +1291,22 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(my_union::try_from(v.clone())?),
+1 => Self::resok4(my_union::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for my_union<Bytes> {
+impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_variable_bytes(None)?),
@@ -1274,29 +1332,29 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias {
+impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(my_union::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(my_union::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for my_union {
+impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_u32()?),
@@ -1322,29 +1380,29 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(my_union::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(my_union::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for my_union<Bytes> {
+impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::var(v.try_variable_bytes(None)?),
@@ -1369,29 +1427,29 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias {
+impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(small::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(small::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_u32()?,
 })
@@ -1414,29 +1472,29 @@ a: v.try_u32()?,
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(small::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(small::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_bytes(None)?,
 })
@@ -1456,22 +1514,22 @@ a: v.try_variable_bytes(None)?,
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias {
+impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
@@ -1489,22 +1547,22 @@ Ok(Self(v.try_u32()?))
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-1 => Self::resok4(alias::try_from(v.clone())?),
+1 => Self::resok4(alias::try_from(&mut v)?),
 2 => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
@@ -1521,10 +1579,10 @@ Ok(Self(v.try_variable_bytes(None)?))
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1546,10 +1604,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_variable_bytes(None)?),
@@ -1572,10 +1630,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
@@ -1584,10 +1642,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias {
+impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
@@ -1604,10 +1662,10 @@ Ok(Self(v.try_u32()?))
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for CB_GETATTR4res {
+        r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let type_v = v.try_u32()?;
 Ok(match type_v {
 1 => Self::resok4(v.try_u32()?),
@@ -1634,11 +1692,11 @@ d => return Err(Error::UnknownVariant(d as i32)),
 				void;
 			};
 		"#,
-        r#"impl TryFrom<Bytes> for settime4 {
+        r#"impl TryFrom<&mut Bytes> for settime4 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-let set_it = time_how4::try_from(v.clone())?;
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+let set_it = time_how4::try_from(&mut v)?;
 Ok(match set_it {
 time_how4::SET_TO_CLIENT_TIME4 => Self::time(v.try_u32()?),
 _ => Self::Void,
@@ -1646,10 +1704,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for time_how4 {
+impl TryFrom<&mut Bytes> for time_how4 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(match v.try_i32()? {
 0 => Self::SET_TO_SERVER_TIME4,
 1 => Self::SET_TO_CLIENT_TIME4,
@@ -1667,10 +1725,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 uint32_t a[3];
             };
         "#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
 v.try_u32()?,
@@ -1693,23 +1751,23 @@ v.try_u32()?,
                 other a[2];
             };
         "#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-other::try_from(v.clone())?,
-other::try_from(v.clone())?,
+other::try_from(&mut v)?,
+other::try_from(&mut v)?,
 ],
 })
 }
@@ -1725,10 +1783,10 @@ other::try_from(v.clone())?,
                 uint32_t a[SIZE];
             };
         "#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
 v.try_u32()?,
@@ -1751,23 +1809,23 @@ v.try_u32()?,
                 other a[SIZE];
             };
         "#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-other::try_from(v.clone())?,
-other::try_from(v.clone())?,
+other::try_from(&mut v)?,
+other::try_from(&mut v)?,
 ],
 })
 }
@@ -1782,10 +1840,10 @@ other::try_from(v.clone())?,
                 uint32_t a<>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<u32>(None)?,
 })
@@ -1804,19 +1862,19 @@ a: v.try_variable_array::<u32>(None)?,
                 other a<>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<other>(None)?,
 })
@@ -1832,10 +1890,10 @@ a: v.try_variable_array::<other>(None)?,
                 uint32_t a<42>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<u32>(Some(42))?,
 })
@@ -1854,19 +1912,19 @@ a: v.try_variable_array::<u32>(Some(42))?,
                 other a<42>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<other>(Some(42))?,
 })
@@ -1883,10 +1941,10 @@ a: v.try_variable_array::<other>(Some(42))?,
                 uint32_t a<SIZE>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for small {
+        r#"impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<u32>(Some(42))?,
 })
@@ -1906,19 +1964,19 @@ a: v.try_variable_array::<u32>(Some(42))?,
                 other a<SIZE>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for other {
+        r#"impl TryFrom<&mut Bytes> for other {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_u32()?,
 })
 }
 }
-impl TryFrom<Bytes> for small {
+impl TryFrom<&mut Bytes> for small {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<other>(Some(42))?,
 })
@@ -1937,23 +1995,23 @@ a: v.try_variable_array::<other>(Some(42))?,
                     other a[2];
                 };
             "#,
-        r#"impl TryFrom<Bytes> for other<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-other::try_from(v.clone())?,
-other::try_from(v.clone())?,
+other::try_from(&mut v)?,
+other::try_from(&mut v)?,
 ],
 })
 }
@@ -1972,23 +2030,23 @@ other::try_from(v.clone())?,
                     other a[SIZE];
                 };
             "#,
-        r#"impl TryFrom<Bytes> for other<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-other::try_from(v.clone())?,
-other::try_from(v.clone())?,
+other::try_from(&mut v)?,
+other::try_from(&mut v)?,
 ],
 })
 }
@@ -2006,19 +2064,19 @@ other::try_from(v.clone())?,
                 other a<42>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for other<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<other<Bytes>>(Some(42))?,
 })
@@ -2038,19 +2096,19 @@ a: v.try_variable_array::<other<Bytes>>(Some(42))?,
                 other a<SIZE>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for other<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for other<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
 b: v.try_variable_bytes(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for small<Bytes> {
+impl TryFrom<&mut Bytes> for small<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: v.try_variable_array::<other<Bytes>>(Some(42))?,
 })
@@ -2071,19 +2129,19 @@ a: v.try_variable_array::<other<Bytes>>(Some(42))?,
                 a_status        status;
             };
         "#,
-        r#"impl TryFrom<Bytes> for DELEGPURGE4res {
+        r#"impl TryFrom<&mut Bytes> for DELEGPURGE4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(DELEGPURGE4res {
-status: a_status::try_from(v.clone())?,
+status: a_status::try_from(&mut v)?,
 })
 }
 }
-impl TryFrom<Bytes> for a_status {
+impl TryFrom<&mut Bytes> for a_status {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(match v.try_i32()? {
 0 => Self::ZERO,
 1 => Self::ONE,
@@ -2107,19 +2165,19 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 alias        status;
             };
         "#,
-        r#"impl TryFrom<Bytes> for DELEGPURGE4res {
+        r#"impl TryFrom<&mut Bytes> for DELEGPURGE4res {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(DELEGPURGE4res {
-status: alias::try_from(v.clone())?,
+status: alias::try_from(&mut v)?,
 })
 }
 }
-impl TryFrom<Bytes> for a_status {
+impl TryFrom<&mut Bytes> for a_status {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(match v.try_i32()? {
 0 => Self::ZERO,
 1 => Self::ONE,
@@ -2127,11 +2185,11 @@ d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
-impl TryFrom<Bytes> for alias {
+impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(a_status::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(a_status::try_from(&mut v)?))
 }
 }
 "#
@@ -2148,32 +2206,32 @@ Ok(Self(a_status::try_from(v.clone())?))
                 u_type_name   resarray[2];
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: [
-u_type_name::try_from(v.clone())?,
-u_type_name::try_from(v.clone())?,
+u_type_name::try_from(&mut v)?,
+u_type_name::try_from(&mut v)?,
 ],
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
-1 => Self::some_var(alias::try_from(v.clone())?),
+1 => Self::some_var(alias::try_from(&mut v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2192,29 +2250,29 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 u_type_name   resarray<42>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
-1 => Self::some_var(alias::try_from(v.clone())?),
+1 => Self::some_var(alias::try_from(&mut v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2233,29 +2291,29 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 u_type_name   resarray<>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for alias<Bytes> {
+impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
-1 => Self::some_var(alias::try_from(v.clone())?),
+1 => Self::some_var(alias::try_from(&mut v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2273,22 +2331,22 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 u_type_name   resarray[2];
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: [
-u_type_name::try_from(v.clone())?,
-u_type_name::try_from(v.clone())?,
+u_type_name::try_from(&mut v)?,
+u_type_name::try_from(&mut v)?,
 ],
 })
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
 1 => Self::some_var(v.try_variable_bytes(None)?),
@@ -2309,19 +2367,19 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 u_type_name   resarray<42>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
 })
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
 1 => Self::some_var(v.try_variable_bytes(None)?),
@@ -2342,19 +2400,19 @@ d => return Err(Error::UnknownVariant(d as i32)),
                 u_type_name   resarray<>;
             };
         "#,
-        r#"impl TryFrom<Bytes> for CB_COMPOUND4res<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for CB_COMPOUND4res<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
 resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
 })
 }
 }
-impl TryFrom<Bytes> for u_type_name<Bytes> {
+impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let s = v.try_u32()?;
 Ok(match s {
 1 => Self::some_var(v.try_variable_bytes(None)?),
@@ -2370,10 +2428,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
         r#"
             typedef uint32_t alias;
         "#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
@@ -2385,10 +2443,10 @@ Ok(Self(v.try_u32()?))
         r#"
             typedef opaque alias;
         "#,
-        r#"impl TryFrom<Bytes> for alias<Bytes> {
+        r#"impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
@@ -2403,17 +2461,17 @@ Ok(Self(v.try_variable_bytes(None)?))
                 uint32_t var_name;
             };
         "#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(target::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(target::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for target {
+impl TryFrom<&mut Bytes> for target {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(target {
 var_name: v.try_u32()?,
 })
@@ -2428,18 +2486,18 @@ var_name: v.try_u32()?,
             typedef alias alias2;
             typedef uint32_t alias;
         "#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
-impl TryFrom<Bytes> for alias2 {
+impl TryFrom<&mut Bytes> for alias2 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(alias::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(alias::try_from(&mut v)?))
 }
 }
 "#
@@ -2454,24 +2512,24 @@ Ok(Self(alias::try_from(v.clone())?))
                 uint32_t var_name;
             };
         "#,
-        r#"impl TryFrom<Bytes> for alias {
+        r#"impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(target::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(target::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for alias2 {
+impl TryFrom<&mut Bytes> for alias2 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(alias::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(alias::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for target {
+impl TryFrom<&mut Bytes> for target {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(target {
 var_name: v.try_u32()?,
 })
@@ -2491,34 +2549,34 @@ var_name: v.try_u32()?,
                 utf8str_mixed           who;
             };
         "#,
-        r#"impl TryFrom<Bytes> for acemask4 {
+        r#"impl TryFrom<&mut Bytes> for acemask4 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_u32()?))
 }
 }
-impl TryFrom<Bytes> for nfsace4<Bytes> {
+impl TryFrom<&mut Bytes> for nfsace4<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(nfsace4 {
-access_mask: acemask4::try_from(v.clone())?,
-who: utf8str_mixed::try_from(v.clone())?,
+access_mask: acemask4::try_from(&mut v)?,
+who: utf8str_mixed::try_from(&mut v)?,
 })
 }
 }
-impl TryFrom<Bytes> for utf8str_mixed<Bytes> {
+impl TryFrom<&mut Bytes> for utf8str_mixed<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-Ok(Self(utf8string::try_from(v.clone())?))
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(utf8string::try_from(&mut v)?))
 }
 }
-impl TryFrom<Bytes> for utf8string<Bytes> {
+impl TryFrom<&mut Bytes> for utf8string<Bytes> {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_bytes(None)?))
 }
 }
@@ -2530,10 +2588,10 @@ Ok(Self(v.try_variable_bytes(None)?))
         r#"
             typedef uint32_t        bitmap4<>;
 		"#,
-        r#"impl TryFrom<Bytes> for bitmap4 {
+        r#"impl TryFrom<&mut Bytes> for bitmap4 {
 type Error = Error;
 
-fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_variable_array::<u32>(None)?))
 }
 }
@@ -2548,10 +2606,10 @@ Ok(Self(v.try_variable_array::<u32>(None)?))
     //                 alias   field<>;
     //             };
     //         "#,
-    //         r#"impl TryFrom<Bytes> for small<Bytes> {
+    //         r#"impl TryFrom<&mut Bytes> for small<Bytes> {
     // type Error = Error;
 
-    // fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
+    // fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
     // Ok(small {
     // resarray: v.try_variable_bytes(None)?,
     // })
