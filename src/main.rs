@@ -8,7 +8,7 @@ use crate::indexes::*;
 use crate::printer::*;
 use pest::Parser;
 use pest_derive::Parser;
-// mod test;
+mod test;
 
 // The derive comment to be added to types.
 const DERIVE: &'static str = "#[derive(Debug, PartialEq)]";
@@ -41,12 +41,8 @@ fn main() -> Result<()> {
 
     let mut out = String::new();
     print_types(&mut out, &ast, &generic_index)?;
-    print_impl_from(&mut out, &ast, &generic_index, &case_index, &type_index)?;
+    print_impl_from(&mut out, &generic_index, &case_index, &type_index)?;
     println!("{}", out);
 
     Ok(())
 }
-
-// let key = index
-//     .get(v[0].ident_str())
-//     .unwrap_or(&v[0].ident_str().to_string());
