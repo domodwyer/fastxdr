@@ -1,14 +1,14 @@
 mod ast;
 mod header;
+mod impls;
 mod indexes;
-mod printer;
 
 use crate::ast::*;
+use crate::impls::from::bytes::{Bytes, RefMutBytes};
+use crate::impls::*;
 use crate::indexes::*;
-use crate::printer::*;
 use pest::Parser;
 use pest_derive::Parser;
-mod test;
 
 // The derive comment to be added to types.
 const DERIVE: &'static str = "#[derive(Debug, PartialEq)]";
@@ -41,7 +41,14 @@ fn main() -> Result<()> {
 
     let mut out = String::new();
     print_types(&mut out, &ast, &generic_index)?;
-    print_impl_from(&mut out, &generic_index, &case_index, &type_index)?;
+    from::print_impl_from(&mut out, Bytes, &generic_index, &case_index, &type_index)?;
+    from::print_impl_from(
+        &mut out,
+        RefMutBytes,
+        &generic_index,
+        &case_index,
+        &type_index,
+    )?;
     println!("{}", out);
 
     Ok(())

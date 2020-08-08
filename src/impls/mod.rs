@@ -1,7 +1,6 @@
-mod impl_from;
+pub mod from;
 mod types;
 
-pub use impl_from::*;
 pub use types::*;
 
 pub(crate) struct SafeName<T>(T)
