@@ -49,6 +49,7 @@ fn main() -> Result<()> {
         &case_index,
         &type_index,
     )?;
+    print_impl_wire_size(&mut out, Bytes, &type_index, &generic_index)?;
     println!("{}", out);
 
     Ok(())

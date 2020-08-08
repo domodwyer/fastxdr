@@ -127,6 +127,13 @@ pub fn print_types<W: std::fmt::Write>(
                         .trim()
                 )?;
             }
+
+            // If the target is the opaque type, it should not have array
+            // quantifiers - the opaque type has a variable length already.
+            if v.target.is_opaque() {
+                return Ok(writeln!(w, "(T);")?);
+            }
+
             if generic_index.contains(v.target.as_str()) {
                 write!(w, " (")?;
                 target.write_with_bounds(w, Some(&["T"]))?;
@@ -633,6 +640,122 @@ pub struct alias<T: AsRef<[u8]> + Debug> (Vec<small<T>>);
 pub struct small<T> where T: AsRef<[u8]> + Debug {
 id: T,
 }
+"#
+    );
+
+    test_convert!(
+        test_typedef_fixed_array_known,
+        r#"
+            typedef small alias[8];
+			struct small {
+				uint32_t        id;
+			};
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+pub struct alias([small; 8]);
+#[derive(Debug, PartialEq)]
+pub struct small {
+id: u32,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_fixed_array_known_generic,
+        r#"
+            typedef small alias[8];
+			struct small {
+				opaque        id;
+			};
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug> ([small<T>; 8]);
+#[derive(Debug, PartialEq)]
+pub struct small<T> where T: AsRef<[u8]> + Debug {
+id: T,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_fixed_array_constant,
+        r#"
+            const SIZE        = 8;
+            typedef small alias[SIZE];
+			struct small {
+				uint32_t        id;
+			};
+		"#,
+        r#"const SIZE: u32 = 8;
+#[derive(Debug, PartialEq)]
+pub struct alias([small; SIZE as usize]);
+#[derive(Debug, PartialEq)]
+pub struct small {
+id: u32,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_fixed_array_constant_generic,
+        r#"
+            const SIZE        = 8;
+            typedef small alias[SIZE];
+			struct small {
+				opaque        id;
+			};
+		"#,
+        r#"const SIZE: u32 = 8;
+#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug> ([small<T>; SIZE as usize]);
+#[derive(Debug, PartialEq)]
+pub struct small<T> where T: AsRef<[u8]> + Debug {
+id: T,
+}
+"#
+    );
+
+    test_convert!(
+        test_typedef_generic_array_fixed_opaque,
+        r#"
+            typedef opaque  alias[42];
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug>(T);
+"#
+    );
+
+    test_convert!(
+        test_typedef_generic_array_fixed_constant_opaque,
+        r#"
+            const SIZE = 42;
+            typedef opaque  alias[SIZE];
+		"#,
+        r#"const SIZE: u32 = 42;
+#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug>(T);
+"#
+    );
+
+    test_convert!(
+        test_typedef_generic_array_variable_opaque,
+        r#"
+            typedef opaque  alias<42>;
+		"#,
+        r#"#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug>(T);
+"#
+    );
+
+    test_convert!(
+        test_typedef_generic_array_variable_constant_opaque,
+        r#"
+            const SIZE = 42;
+            typedef opaque  alias<SIZE>;
+		"#,
+        r#"const SIZE: u32 = 42;
+#[derive(Debug, PartialEq)]
+pub struct alias<T: AsRef<[u8]> + Debug>(T);
 "#
     );
 }

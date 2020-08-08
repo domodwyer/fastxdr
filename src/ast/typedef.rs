@@ -20,15 +20,16 @@ impl<'a> Typedef<'a> {
             _ => unreachable!("incorrect type in typedef"),
         };
 
-        // Optionally, extract the array definition so long as the target is not
-        // opaque.
-        //
-        // Typedefs to opaque types include a variable array identifier so the
-        // caller knows to read the length prefix bytes. This is already handled
-        // by the opaque reader however, and confuses type resolution.
-        let alias = if vs.len() > 0 && !target.is_opaque() {
+        // Optionally, extract the array definition
+        let alias = if vs.len() > 0 {
             match vs.remove(0) {
                 Node::ArrayFixed(s) => ArrayType::FixedSize(alias, ArraySize::from(s)),
+
+                // Typedefs to opaque types include a variable array identifier so the
+                // caller knows to read the length prefix bytes. This is already handled
+                // by the opaque reader however, so map this to a "no array" wrapper.
+                Node::ArrayVariable(_) if target.is_opaque() => ArrayType::None(alias),
+
                 Node::ArrayVariable(s) => ArrayType::VariableSize(
                     alias,
                     match s.trim() {
@@ -36,7 +37,7 @@ impl<'a> Typedef<'a> {
                         s => Some(ArraySize::from(s)),
                     },
                 ),
-                _ => unreachable!("incorrect type in typedef"),
+                t => unreachable!("incorrect type in typedef {:?}", t),
             }
         } else {
             ArrayType::None(alias)

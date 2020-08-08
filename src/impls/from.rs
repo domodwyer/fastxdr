@@ -163,10 +163,14 @@ pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
                         }
 
                         // There may also be several "void" cases
+                        let mut did_void_default = false;
                         for c in v.void_cases.iter() {
                             let name = match c.as_str() {
-                                "default" => "_",
-                                v => &v,
+                                "default" => {
+                                    did_void_default = true;
+                                    "_"
+                                }
+                                v => constant_index.get(v).unwrap_or(c),
                             };
                             writeln!(w, "{} => Self::Void,", name)?;
                         }
@@ -186,7 +190,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
                                 try_from,
                             )?;
                             writeln!(w, "),")?;
-                        } else {
+                        } else if !did_void_default {
                             writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
                         }
 
@@ -297,7 +301,16 @@ where
 {
     // Print a fixed-size array.
     let print_fixed = |w: &mut W, t: &BasicType, size: u32| -> Result<()> {
-        match t {
+        let mut field = t.clone();
+
+        // If requested, resolve a typedef the type to the target type.
+        if !resolve_typedefs.use_alias() {
+            if let Some(typedef) = type_index.typedef_target(t.as_str()) {
+                field = typedef.target.clone();
+            }
+        }
+
+        match field {
             BasicType::Opaque => write!(w, "v.try_bytes({})?", size)?,
             BasicType::String => unreachable!("unexpected fixed length string"),
             _ => {
@@ -316,16 +329,11 @@ where
     let print_variable = |w: &mut W, t: &BasicType, size: Option<u32>| -> Result<()> {
         let mut type_str = t.to_string();
 
-        // If requested, resolve a typedef the type to the target tye.
+        // If requested, resolve a typedef the type to the target type.
         if !resolve_typedefs.use_alias() {
             type_str = type_index
                 .get(&type_str)
-                .map(|t| match t {
-                    AstType::Struct(s) => s.name().to_string(),
-                    AstType::Union(s) => s.name().to_string(),
-                    AstType::Enum(s) => s.name.to_string(),
-                    AstType::Typedef(s) => s.target.as_str().to_string(),
-                })
+                .map(|t| t.to_string())
                 .unwrap_or(type_str)
                 .to_owned();
         }
@@ -978,8 +986,8 @@ d => return Err(Error::UnknownVariant(d as i32)),
 			union CB_GETATTR4res switch (unsigned int status) {
 			case MODE4_SUID:
 				u32       resok4;
-			case 2:
-				u64       name;
+			case MODE4_OTHER:
+				void;
 			};
 		"#,
         r#"impl TryFrom<&mut Bytes> for CB_GETATTR4res {
@@ -989,7 +997,7 @@ fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
 Status::MODE4_SUID => Self::resok4(v.try_u32()?),
-2 => Self::name(v.try_u64()?),
+Status::MODE4_OTHER => Self::Void,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1129,7 +1137,6 @@ let status = v.try_u32()?;
 Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1158,7 +1165,6 @@ Ok(match status {
 1 => Self::resok4(v.try_u32()?),
 2 => Self::Void,
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -1742,7 +1748,6 @@ let set_it = time_how4::try_from(&mut *v)?;
 Ok(match set_it {
 time_how4::SET_TO_CLIENT_TIME4 => Self::time(v.try_u32()?),
 _ => Self::Void,
-d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
 }
@@ -2640,23 +2645,19 @@ Ok(Self(v.try_variable_array::<u32>(None)?))
 "#
     );
 
-    //     test_convert!(
-    //         test_struct_typedef_array_generic,
-    //         r#"
-    //             typedef opaque alias;
-    //             struct small {
-    //                 alias   field<>;
-    //             };
-    //         "#,
-    //         r#"impl TryFrom<&mut Bytes> for small<Bytes> {
-    // type Error = Error;
+    test_convert!(
+        test_typedef_verifier4,
+        r#"
+            const NFS4_VERIFIER_SIZE        = 8;
+            typedef opaque  verifier4[NFS4_VERIFIER_SIZE];
+		"#,
+        r#"impl TryFrom<&mut Bytes> for verifier4<Bytes> {
+type Error = Error;
 
-    // fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-    // Ok(small {
-    // resarray: v.try_variable_bytes(None)?,
-    // })
-    // }
-    // }
-    // "#
-    //     );
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(Self(v.try_bytes(8)?))
+}
+}
+"#
+    );
 }

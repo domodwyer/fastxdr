@@ -9,6 +9,17 @@ pub enum AstType<'a> {
     Typedef(Typedef<'a>),
 }
 
+impl<'a> AstType<'a> {
+    pub fn to_string(&self) -> String {
+        match self {
+            AstType::Struct(s) => s.name().to_string(),
+            AstType::Union(s) => s.name().to_string(),
+            AstType::Enum(s) => s.name.to_string(),
+            AstType::Typedef(s) => s.target.as_str().to_string(),
+        }
+    }
+}
+
 pub struct TypeIndex<'a>(BTreeMap<&'a str, AstType<'a>>);
 
 impl<'a> TypeIndex<'a> {
@@ -48,6 +59,15 @@ impl<'a> TypeIndex<'a> {
         self.0.get(name.as_ref())
     }
 
+    /// Returns the type aliased by `name` if `name` is a typedef.
+    pub fn typedef_target<T: AsRef<str>>(&self, name: T) -> Option<&Typedef<'a>> {
+        match self.0.get(name.as_ref()) {
+            Some(AstType::Typedef(t)) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Iterates over the types in the type index.
     pub fn iter(&self) -> impl std::iter::Iterator<Item = &AstType<'a>> {
         self.0.values()
     }
@@ -358,6 +378,35 @@ mod tests {
             }),
         );
         want.insert("thing", AstType::Enum(&r[2].unwrap_enum()));
+
+        assert_eq!(got.0, want);
+    }
+
+    #[test]
+    fn test_typedef_verifier4() {
+        use crate::ast::ArraySize;
+
+        let input = r#"
+            const NFS4_VERIFIER_SIZE        = 8;
+            typedef opaque  verifier4[NFS4_VERIFIER_SIZE];
+        "#;
+
+        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
+        let ast = walk(ast.next().unwrap()).unwrap();
+
+        let got = TypeIndex::new(&ast);
+
+        let mut want = BTreeMap::new();
+        want.insert(
+            "verifier4",
+            AstType::Typedef(Typedef {
+                target: BasicType::Opaque,
+                alias: ArrayType::FixedSize(
+                    BasicType::Ident("verifier4".into()),
+                    ArraySize::Constant("NFS4_VERIFIER_SIZE".into()),
+                ),
+            }),
+        );
 
         assert_eq!(got.0, want);
     }

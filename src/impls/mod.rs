@@ -1,7 +1,10 @@
 pub mod from;
-mod types;
 
+mod types;
 pub use types::*;
+
+mod wire_size;
+pub use wire_size::*;
 
 pub(crate) struct SafeName<T>(T)
 where

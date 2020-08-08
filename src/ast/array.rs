@@ -20,7 +20,7 @@ impl std::fmt::Display for ArraySize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Known(s) => write!(f, "{}", s),
-            Self::Constant(s) => write!(f, "{}", s),
+            Self::Constant(s) => write!(f, "{} as usize", s),
         }
     }
 }
