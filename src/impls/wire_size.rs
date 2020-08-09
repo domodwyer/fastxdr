@@ -1,6 +1,6 @@
-use super::SafeName;
+use super::{NonDigitName, SafeName};
 use crate::ast::BasicType;
-use crate::impls::from::FromTemplate;
+use crate::impls::template::*;
 use crate::indexes::{AstType, GenericIndex, TypeIndex};
 use crate::Result;
 
@@ -38,23 +38,36 @@ pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
                     // Iterate over all the variants of v, including the
                     // default.
                     for case in v.cases.iter().chain(v.default.iter()) {
-                        write!(
-                            w,
-                            r#"Self::{}(inner) => inner.wire_size()"#,
-                            SafeName(&case.field_name)
-                        )?;
+                        // A single case statement may have many case values tied to it
+                        // if fallthrough values are used:
+                        //
+                        // 	case 1:
+                        // 	case 2:
+                        // 		// statement
+                        //
+                        for c_value in case.case_values.iter() {
+                            write!(
+                                w,
+                                r#"Self::{}(inner) => inner.wire_size()"#,
+                                NonDigitName(SafeName(c_value))
+                            )?;
 
-                        // In-line opaques require padding
-                        if case.contains_opaque() {
-                            writeln!(w, r#" + pad_length(inner.wire_size()),"#)?;
-                        } else {
-                            writeln!(w, ",")?;
+                            // In-line opaques require padding
+                            if case.contains_opaque() {
+                                writeln!(w, r#" + pad_length(inner.wire_size()),"#)?;
+                            } else {
+                                writeln!(w, ",")?;
+                            }
                         }
                     }
 
-                    // And there may be one or more void cases.
-                    if v.void_cases.len() > 0 {
-                        writeln!(w, r#"Self::Void => 0,"#)?;
+                    // There may also be several "void" cases
+                    for c in v.void_cases.iter() {
+                        writeln!(w, "Self::{} => 0,", NonDigitName(SafeName(c.as_str())))?;
+                    }
+
+                    if let Some(_) = v.default {
+                        writeln!(w, "Self::default => 0,")?;
                     }
 
                     writeln!(w, "}}")?;
@@ -116,7 +129,7 @@ fn print_impl<W: std::fmt::Write, T: FromTemplate, F: Fn(&mut W) -> Result<()>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::impls::from::bytes::RefMutBytes;
+    use crate::impls::template::bytes::RefMutBytes;
     use crate::indexes::*;
     use crate::{walk, Rule, XDRParser};
     use pest::Parser;
@@ -127,7 +140,7 @@ mod tests {
             fn $name() {
                 let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
                 let ast = walk(ast.next().unwrap()).unwrap();
-                let generic_index = build_generic_index(&ast);
+                let generic_index = GenericIndex::new(&ast);
                 let type_index = TypeIndex::new(&ast);
 
                 let mut got = String::new();
@@ -276,8 +289,8 @@ self.i.wire_size() +
         r#"impl WireSize for CB_GETATTR4res {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::name(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
+Self::v_2(inner) => inner.wire_size(),
 }
 }
 }
@@ -301,8 +314,8 @@ Self::name(inner) => inner.wire_size(),
         r#"impl WireSize for CB_GETATTR4res {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::name(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
+Self::v_2(inner) => inner.wire_size(),
 }
 }
 }
@@ -320,15 +333,15 @@ fn wire_size(&self) -> usize {
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
 				u32       resok4;
-			case 2:
-				u64       type;
+			case type:
+				u64       async;
 			};
 		"#,
         r#"impl WireSize for CB_GETATTR4res {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::type_v(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
+Self::type(inner) => inner.wire_size(),
 }
 }
 }
@@ -348,8 +361,8 @@ Self::type_v(inner) => inner.wire_size(),
         r#"impl WireSize for CB_GETATTR4res<Bytes> {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::name(inner) => inner.wire_size() + pad_length(inner.wire_size()),
+Self::v_1(inner) => inner.wire_size(),
+Self::v_2(inner) => inner.wire_size() + pad_length(inner.wire_size()),
 }
 }
 }
@@ -370,8 +383,32 @@ Self::name(inner) => inner.wire_size() + pad_length(inner.wire_size()),
         r#"impl WireSize for CB_GETATTR4res {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::name(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
+Self::v_2(inner) => inner.wire_size(),
+Self::v_3(inner) => inner.wire_size(),
+}
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_with_fallthrough_void,
+        r#"
+			union CB_GETATTR4res switch (unsigned int status) {
+			case 1:
+				u32       resok4;
+			case 2:
+			case 3:
+                void;
+			};
+		"#,
+        r#"impl WireSize for CB_GETATTR4res {
+fn wire_size(&self) -> usize {
+4 + match self {
+Self::v_1(inner) => inner.wire_size(),
+Self::v_2 => 0,
+Self::v_3 => 0,
 }
 }
 }
@@ -385,14 +422,14 @@ Self::name(inner) => inner.wire_size(),
 			case 1:
 				u32       resok4;
 			default:
-				u64       name;
+				void;
 			};
 		"#,
         r#"impl WireSize for CB_GETATTR4res {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::resok4(inner) => inner.wire_size(),
-Self::name(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
+Self::default => 0,
 }
 }
 }
@@ -432,7 +469,7 @@ self.0.wire_size()
 impl WireSize for my_union {
 fn wire_size(&self) -> usize {
 4 + match self {
-Self::var(inner) => inner.wire_size(),
+Self::v_1(inner) => inner.wire_size(),
 }
 }
 }

@@ -109,11 +109,6 @@ impl<'a> UnionCase<'a> {
                 field_name: l.to_string(),
                 field_value: ArrayType::None(t.to_owned()),
             },
-            [Node::Type(t), Node::Type(l)] => Self {
-                case_values,
-                field_name: l.as_str().to_string(),
-                field_value: ArrayType::None(t.to_owned()),
-            },
             _ => panic!("invalid number of union field tokens"),
         }
     }

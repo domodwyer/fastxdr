@@ -55,6 +55,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
 
 [[package]]
+name = "fastxdr"
+version = "1.0.0"
+dependencies = [
+ "bytes",
+ "pest",
+ "pest_derive",
+ "thiserror",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -196,13 +206,3 @@ name = "unicode-xid"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "826e7639553986605ec5979c7dd957c7895e93eabed50ab2ffa7f6128a75097c"
-
-[[package]]
-name = "xdr-ast"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "pest",
- "pest_derive",
- "thiserror",
-]

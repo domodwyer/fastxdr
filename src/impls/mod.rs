@@ -1,4 +1,7 @@
-pub mod from;
+pub mod template;
+
+mod from;
+pub use from::*;
 
 mod types;
 pub use types::*;
@@ -24,5 +27,42 @@ where
             "TRUE" | "FALSE" => write!(f, "{}", self.0.as_ref().to_lowercase()),
             _ => write!(f, "{}", self.0.as_ref()),
         }
+    }
+}
+
+impl<T> std::convert::AsRef<str> for SafeName<T>
+where
+    T: std::fmt::Display + AsRef<str>,
+{
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+pub(crate) struct NonDigitName<T>(T)
+where
+    T: AsRef<str>;
+
+impl<T> std::fmt::Display for NonDigitName<T>
+where
+    T: AsRef<str>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(c) = self.0.as_ref().chars().next() {
+            if c.is_numeric() {
+                write!(f, "v_")?;
+            }
+        }
+
+        write!(f, "{}", self.0.as_ref())
+    }
+}
+
+impl<T> std::convert::AsRef<str> for NonDigitName<T>
+where
+    T: std::fmt::Display + AsRef<str>,
+{
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }

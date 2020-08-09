@@ -1,22 +1,27 @@
-use super::SafeName;
+use super::{NonDigitName, SafeName};
 use crate::ast::{ArrayType, BasicType, Node};
-use crate::indexes::GenericIndex;
-use crate::{Result, DERIVE, TRAIT_BOUNDS};
+use crate::indexes::*;
+use crate::Result;
+
+// TODO: set lints + docs
+
+const TRAIT_BOUNDS: &'static str = "<T> where T: AsRef<[u8]> + Debug";
 
 pub fn print_types<W: std::fmt::Write>(
     w: &mut W,
     item: &Node,
     generic_index: &GenericIndex,
+    derive: &str,
 ) -> Result<()> {
     match item {
         Node::EOF => {}
         Node::Root(v) => {
             for field in v.iter() {
-                print_types(w, field, generic_index)?;
+                print_types(w, field, generic_index, derive)?;
             }
         }
         Node::Struct(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}", derive)?;
             write!(w, "pub struct {}", v.name)?;
             if generic_index.contains(v.name.as_str()) {
                 write!(w, "{}", TRAIT_BOUNDS)?;
@@ -24,7 +29,7 @@ pub fn print_types<W: std::fmt::Write>(
 
             writeln!(w, " {{")?;
             for f in v.fields.iter() {
-                write!(w, "{}: ", SafeName(&f.field_name))?;
+                write!(w, "pub {}: ", SafeName(&f.field_name))?;
 
                 // Optional fields require boxing to allow a self-referential
                 // type chain
@@ -56,37 +61,50 @@ pub fn print_types<W: std::fmt::Write>(
             writeln!(w, "}}")?;
         }
         Node::Union(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}", derive)?;
             write!(w, "pub enum {}", v.name())?;
             if generic_index.contains(v.name()) {
                 write!(w, "{}", TRAIT_BOUNDS)?;
             }
 
             writeln!(w, " {{")?;
-            for case in v.cases.iter().chain(v.default.iter()) {
-                write!(w, "{}(", case.field_name)?;
+            for case in v.cases.iter() {
+                // A single case statement may have many case values tied to it
+                // if fallthrough values are used:
+                //
+                // 	case 1:
+                // 	case 2:
+                // 		// statement
+                //
+                for c_value in case.case_values.iter() {
+                    write!(w, "{}(", NonDigitName(SafeName(&c_value)))?;
 
-                match case.field_value.unwrap_array() {
-                    BasicType::Opaque => write!(w, "T")?,
-                    BasicType::String => write!(w, "String")?,
-                    BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
-                        write!(w, "{}<T>", i.as_ref())?
+                    match case.field_value.unwrap_array() {
+                        BasicType::Opaque => write!(w, "T")?,
+                        BasicType::String => write!(w, "String")?,
+                        BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
+                            write!(w, "{}<T>", i.as_ref())?
+                        }
+                        _ => write!(w, "{}", case.field_value)?,
                     }
-                    _ => write!(w, "{}", case.field_value)?,
-                }
 
-                writeln!(w, "),")?;
+                    writeln!(w, "),")?;
+                }
             }
 
-            // It may also have one or more cases leading to a "void".
-            if v.void_cases.len() > 0 {
-                writeln!(w, "Void,")?;
+            // There may also be several "void" cases
+            for c in v.void_cases.iter() {
+                writeln!(w, "{},", NonDigitName(SafeName(c.as_str())))?;
+            }
+
+            if let Some(_) = v.default {
+                writeln!(w, "default,")?;
             }
 
             writeln!(w, "}}")?;
         }
         Node::Enum(v) => {
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}", derive)?;
             writeln!(w, "pub enum {} {{", v.name)?;
             for var in v.variants.iter() {
                 writeln!(w, "{} = {},", var.name, var.value)?;
@@ -94,7 +112,12 @@ pub fn print_types<W: std::fmt::Write>(
             writeln!(w, "}}")?;
         }
         Node::Constant(v) => {
-            writeln!(w, "const {}: u32 = {};", v[0].ident_str(), v[1].ident_str())?;
+            writeln!(
+                w,
+                "pub const {}: u32 = {};",
+                v[0].ident_str(),
+                v[1].ident_str()
+            )?;
         }
         Node::Typedef(v) => {
             // No typedefs to self - this occurs because the ident/type values
@@ -113,7 +136,7 @@ pub fn print_types<W: std::fmt::Write>(
                 ArrayType::VariableSize(_, s) => ArrayType::VariableSize(&v.target, s.clone()),
             };
 
-            writeln!(w, "{}", DERIVE)?;
+            writeln!(w, "{}", derive)?;
             write!(w, "pub struct {}", v.alias.unwrap_array().as_str())?;
             if generic_index.contains(v.target.as_str()) || v.target.is_opaque() {
                 write!(
@@ -131,15 +154,15 @@ pub fn print_types<W: std::fmt::Write>(
             // If the target is the opaque type, it should not have array
             // quantifiers - the opaque type has a variable length already.
             if v.target.is_opaque() {
-                return Ok(writeln!(w, "(T);")?);
+                return Ok(writeln!(w, "(pub T);")?);
             }
 
             if generic_index.contains(v.target.as_str()) {
-                write!(w, " (")?;
+                write!(w, " (pub ")?;
                 target.write_with_bounds(w, Some(&["T"]))?;
                 writeln!(w, ");")?;
             } else {
-                writeln!(w, "({});", target)?;
+                writeln!(w, "(pub {});", target)?;
             }
         }
         Node::Array(_)
@@ -162,7 +185,6 @@ pub fn print_types<W: std::fmt::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::indexes::*;
     use crate::{walk, Rule, XDRParser};
     use pest::Parser;
 
@@ -172,10 +194,16 @@ mod tests {
             fn $name() {
                 let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
                 let ast = walk(ast.next().unwrap()).unwrap();
-                let generic_index = build_generic_index(&ast);
+                let generic_index = GenericIndex::new(&ast);
 
                 let mut got = String::new();
-                print_types(&mut got, &ast, &generic_index).unwrap();
+                print_types(
+                    &mut got,
+                    &ast,
+                    &generic_index,
+                    "#[derive(Debug, PartialEq)]",
+                )
+                .unwrap();
 
                 assert_eq!(got, $want);
             }
@@ -194,8 +222,8 @@ mod tests {
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub enum locker4 {
-open_owner(open_to_lock_owner4),
-lock_owner(exist_lock_owner4),
+TRUE(open_to_lock_owner4),
+FALSE(exist_lock_owner4),
 }
 "#
     );
@@ -214,8 +242,9 @@ lock_owner(exist_lock_owner4),
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub enum LOCKT4res {
-denied(LOCK4denied),
-Void,
+NFS4ERR_DENIED(LOCK4denied),
+NFS4_OK,
+default,
 }
 "#
     );
@@ -239,9 +268,13 @@ Void,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub enum createtype4 {
-linkdata(linktext4),
-devdata(specdata4),
-Void,
+NF4LNK(linktext4),
+NF4BLK(specdata4),
+NF4CHR(specdata4),
+NF4SOCK,
+NF4FIFO,
+NF4DIR,
+default,
 }
 "#
     );
@@ -258,11 +291,11 @@ Void,
         "#,
         r#"#[derive(Debug, PartialEq)]
 pub enum u_type_name<T> where T: AsRef<[u8]> + Debug {
-some_var(T),
+v_1(T),
 }
 #[derive(Debug, PartialEq)]
 pub struct CB_COMPOUND4res<T> where T: AsRef<[u8]> + Debug {
-resarray: Vec<u_type_name<T>>,
+pub resarray: Vec<u_type_name<T>>,
 }
 "#
     );
@@ -284,11 +317,11 @@ resarray: Vec<u_type_name<T>>,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct LOCK4args {
-locktype: nfs_lock_type4,
-reclaim: bool,
-offset: offset4,
-length: length4,
-locker: locker4,
+pub locktype: nfs_lock_type4,
+pub reclaim: bool,
+pub offset: offset4,
+pub length: length4,
+pub locker: locker4,
 }
 "#
     );
@@ -303,8 +336,8 @@ locker: locker4,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
-seqid: u32,
-other: T,
+pub seqid: u32,
+pub other: T,
 }
 "#
     );
@@ -318,11 +351,11 @@ other: T,
 					opaque          other[SIZE];
 			};
 		"#,
-        r#"const SIZE: u32 = 3;
+        r#"pub const SIZE: u32 = 3;
 #[derive(Debug, PartialEq)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
-seqid: u32,
-other: T,
+pub seqid: u32,
+pub other: T,
 }
 "#
     );
@@ -337,8 +370,8 @@ other: T,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct nfs_client_id4<T> where T: AsRef<[u8]> + Debug {
-verifier: verifier4,
-id: T,
+pub verifier: verifier4,
+pub id: T,
 }
 "#
     );
@@ -352,11 +385,11 @@ id: T,
 					opaque          id<SIZE>;
 			};
 		"#,
-        r#"const SIZE: u32 = 3;
+        r#"pub const SIZE: u32 = 3;
 #[derive(Debug, PartialEq)]
 pub struct nfs_client_id4<T> where T: AsRef<[u8]> + Debug {
-verifier: verifier4,
-id: T,
+pub verifier: verifier4,
+pub id: T,
 }
 "#
     );
@@ -371,8 +404,8 @@ id: T,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct READ4resok<T> where T: AsRef<[u8]> + Debug {
-eof: bool,
-data: T,
+pub eof: bool,
+pub data: T,
 }
 "#
     );
@@ -388,8 +421,8 @@ data: T,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct clientaddr4 {
-r_netid: String,
-r_addr: String,
+pub r_netid: String,
+pub r_addr: String,
 }
 "#
     );
@@ -405,8 +438,8 @@ r_addr: String,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct clientaddr4 {
-r_netid: String,
-r_addr: String,
+pub r_netid: String,
+pub r_addr: String,
 }
 "#
     );
@@ -432,7 +465,7 @@ OPEN4_CREATE = 1,
         r#"
 			const ACL4_SUPPORT_ALLOW_ACL    = 0x00000001;
 		"#,
-        r#"const ACL4_SUPPORT_ALLOW_ACL: u32 = 0x00000001;
+        r#"pub const ACL4_SUPPORT_ALLOW_ACL: u32 = 0x00000001;
 "#
     );
 
@@ -445,13 +478,13 @@ OPEN4_CREATE = 1,
 			typedef utf8string      utf8str_cis;
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct acetype4(u32);
+pub struct acetype4(pub u32);
 #[derive(Debug, PartialEq)]
-pub struct utf8string<T: AsRef<[u8]> + Debug>(T);
+pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
 #[derive(Debug, PartialEq)]
-pub struct sec_oid4<T: AsRef<[u8]> + Debug>(T);
+pub struct sec_oid4<T: AsRef<[u8]> + Debug>(pub T);
 #[derive(Debug, PartialEq)]
-pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
+pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
 "#
     );
 
@@ -467,15 +500,15 @@ pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (utf8string<T>);
             };
         "#,
         r#"#[derive(Debug, PartialEq)]
-pub struct acemask4(u32);
+pub struct acemask4(pub u32);
 #[derive(Debug, PartialEq)]
-pub struct utf8str_mixed<T: AsRef<[u8]> + Debug> (utf8string<T>);
+pub struct utf8str_mixed<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
 #[derive(Debug, PartialEq)]
-pub struct utf8string<T: AsRef<[u8]> + Debug>(T);
+pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
 #[derive(Debug, PartialEq)]
 pub struct nfsace4<T> where T: AsRef<[u8]> + Debug {
-access_mask: acemask4,
-who: utf8str_mixed<T>,
+pub access_mask: acemask4,
+pub who: utf8str_mixed<T>,
 }
 "#
     );
@@ -490,8 +523,8 @@ who: utf8str_mixed<T>,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct cb_client4 {
-cb_program: u32,
-cb_location: clientaddr4,
+pub cb_program: u32,
+pub cb_location: clientaddr4,
 }
 "#
     );
@@ -510,12 +543,12 @@ cb_location: clientaddr4,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
-seqid: u32,
-other: T,
+pub seqid: u32,
+pub other: T,
 }
 #[derive(Debug, PartialEq)]
 pub struct generic_field<T> where T: AsRef<[u8]> + Debug {
-inner: stateid4<T>,
+pub inner: stateid4<T>,
 }
 "#
     );
@@ -533,11 +566,11 @@ inner: stateid4<T>,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
-other: T,
+pub other: T,
 }
 #[derive(Debug, PartialEq)]
 pub enum nfs_argop4<T> where T: AsRef<[u8]> + Debug {
-field_name(stateid4<T>),
+OP_GETATTR(stateid4<T>),
 }
 "#
     );
@@ -551,7 +584,7 @@ field_name(stateid4<T>),
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct nfsace4 {
-type_v: acetype4,
+pub type_v: acetype4,
 }
 "#
     );
@@ -562,13 +595,13 @@ type_v: acetype4,
 			union CB_GETATTR4res switch (unsigned int status) {
 			case 1:
 				CB_GETATTR4resok       resok4;
-			case 2:
-				SomeType       type;
+			case type:
+				SomeType       async;
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub enum CB_GETATTR4res {
-resok4(CB_GETATTR4resok),
+v_1(CB_GETATTR4resok),
 type(SomeType),
 }
 "#
@@ -587,10 +620,11 @@ type(SomeType),
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub enum nfs_argop4 {
-opgetattr(GETATTR4args),
-oplink(LINK4args),
-opnverify(NVERIFY4args),
-Void,
+OP_GETATTR(GETATTR4args),
+OP_LINK(LINK4args),
+OP_NVERIFY(NVERIFY4args),
+OP_GETFH,
+OP_LOOKUPP,
 }
 "#
     );
@@ -604,7 +638,7 @@ Void,
 		"#,
         r#"#[derive(Debug, PartialEq)]
 pub struct entry4 {
-nextentry: Option<Box<entry4>>,
+pub nextentry: Option<Box<entry4>>,
 }
 "#
     );
@@ -618,10 +652,10 @@ nextentry: Option<Box<entry4>>,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias(Vec<small>);
+pub struct alias(pub Vec<small>);
 #[derive(Debug, PartialEq)]
 pub struct small {
-id: u32,
+pub id: u32,
 }
 "#
     );
@@ -635,10 +669,10 @@ id: u32,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug> (Vec<small<T>>);
+pub struct alias<T: AsRef<[u8]> + Debug> (pub Vec<small<T>>);
 #[derive(Debug, PartialEq)]
 pub struct small<T> where T: AsRef<[u8]> + Debug {
-id: T,
+pub id: T,
 }
 "#
     );
@@ -652,10 +686,10 @@ id: T,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias([small; 8]);
+pub struct alias(pub [small; 8]);
 #[derive(Debug, PartialEq)]
 pub struct small {
-id: u32,
+pub id: u32,
 }
 "#
     );
@@ -669,10 +703,10 @@ id: u32,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug> ([small<T>; 8]);
+pub struct alias<T: AsRef<[u8]> + Debug> (pub [small<T>; 8]);
 #[derive(Debug, PartialEq)]
 pub struct small<T> where T: AsRef<[u8]> + Debug {
-id: T,
+pub id: T,
 }
 "#
     );
@@ -686,12 +720,12 @@ id: T,
 				uint32_t        id;
 			};
 		"#,
-        r#"const SIZE: u32 = 8;
+        r#"pub const SIZE: u32 = 8;
 #[derive(Debug, PartialEq)]
-pub struct alias([small; SIZE as usize]);
+pub struct alias(pub [small; SIZE as usize]);
 #[derive(Debug, PartialEq)]
 pub struct small {
-id: u32,
+pub id: u32,
 }
 "#
     );
@@ -705,12 +739,12 @@ id: u32,
 				opaque        id;
 			};
 		"#,
-        r#"const SIZE: u32 = 8;
+        r#"pub const SIZE: u32 = 8;
 #[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug> ([small<T>; SIZE as usize]);
+pub struct alias<T: AsRef<[u8]> + Debug> (pub [small<T>; SIZE as usize]);
 #[derive(Debug, PartialEq)]
 pub struct small<T> where T: AsRef<[u8]> + Debug {
-id: T,
+pub id: T,
 }
 "#
     );
@@ -721,7 +755,7 @@ id: T,
             typedef opaque  alias[42];
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug>(T);
+pub struct alias<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 
@@ -731,9 +765,9 @@ pub struct alias<T: AsRef<[u8]> + Debug>(T);
             const SIZE = 42;
             typedef opaque  alias[SIZE];
 		"#,
-        r#"const SIZE: u32 = 42;
+        r#"pub const SIZE: u32 = 42;
 #[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug>(T);
+pub struct alias<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 
@@ -743,7 +777,7 @@ pub struct alias<T: AsRef<[u8]> + Debug>(T);
             typedef opaque  alias<42>;
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug>(T);
+pub struct alias<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 
@@ -753,9 +787,9 @@ pub struct alias<T: AsRef<[u8]> + Debug>(T);
             const SIZE = 42;
             typedef opaque  alias<SIZE>;
 		"#,
-        r#"const SIZE: u32 = 42;
+        r#"pub const SIZE: u32 = 42;
 #[derive(Debug, PartialEq)]
-pub struct alias<T: AsRef<[u8]> + Debug>(T);
+pub struct alias<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 }

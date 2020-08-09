@@ -1,10 +1,19 @@
 [package]
-name = "xdr-ast"
-version = "0.1.0"
+name = "fastxdr"
+version = "1.0.0"
 authors = ["Dom Dwyer <dom@itsallbroken.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# See more keys and their definitions at
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+license = "BSD-3-Clause"
+description = "Generate Rust types from XDR specs with fast, zero-copy deserialisation"
+readme = "README.md"
+documentation = "https://docs.rs/fastxdr"
+repository = "https://github.com/domodwyer/fastxdr"
+keywords = ["xdr", "codec", "encode", "onc", "rpc"]
+categories = ["network-programming", "encoding", "parser-implementations", "parsing", "development-tools::build-utils"]
 
 [dependencies]
 pest = "2.1.3"

@@ -20,10 +20,10 @@ impl<'a> AstType<'a> {
     }
 }
 
-pub struct TypeIndex<'a>(BTreeMap<&'a str, AstType<'a>>);
+pub struct TypeIndex<'a>(pub BTreeMap<&'a str, AstType<'a>>);
 
 impl<'a> TypeIndex<'a> {
-    pub fn new(ast: &'a Node) -> Self {
+    pub(crate) fn new(ast: &'a Node) -> Self {
         // Resolved holds the <new name> -> <existing name> pairs for
         // successfully resolved typedef targets.
         let mut resolved: BTreeMap<&'a str, AstType> = BTreeMap::new();
