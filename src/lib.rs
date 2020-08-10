@@ -1,3 +1,47 @@
+//! To generate Rust types from an XDR spec at build time, add `fastxdr` to your
+//! `Cargo.toml`:
+//!
+//! ```toml
+//! [build-dependencies]
+//! # For the code generation
+//! fastxdr = "1.0"
+//!
+//! [dependencies]
+//! # Required dependencies of the generated code
+//! thiserror = "1.0"
+//! bytes = "0.5"
+//! ```
+//!
+//! And add a `build.rs` at the crate root (not in `src`!):
+//!
+//! ```rust
+//! fn main() {
+//!     // Tell Cargo to regenerate the types if the XDR spec changes
+//!     println!("cargo:rerun-if-changed=src/xdr_spec.x");
+//!
+//!     // Read from xdr_spec.x, writing the generated code to out.rs
+//!     std::fs::write(
+//!         std::path::Path::new(std::env::var("OUT_DIR").unwrap().as_str()).join("out.rs"),
+//!         fastxdr::Generator::default()
+//!             .generate(include_str!("src/xdr_spec.x"))
+//!             .unwrap(),
+//!     )
+//!     .unwrap();
+//! }
+//! ```
+//!
+//! And then include the generated file in your application:
+//!
+//! ```rust
+//! // Where out.rs is the filename from above
+//! include!(concat!(env!("OUT_DIR"), "/out.rs"));
+//! use xdr::*;
+//! ```
+//!
+//! To view the generated types, either export the generated types in your
+//! application and use `cargo doc`, or use the CLI to produce the generated
+//! code directly for reading.
+
 pub mod ast;
 pub mod impls;
 pub mod indexes;

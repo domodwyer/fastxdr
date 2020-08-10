@@ -16,7 +16,7 @@ deserialisation (see [`Bytes`]).
 
 ## Speed
 
-Deserialising the wire protocol is very fast, usually under 1ms. 
+Deserialising the wire protocol is very fast, usually under 1 microsecond. 
 
 The examples below are NFS messages captured from a production network, of
 typical size and complexity for the protocol:
@@ -37,7 +37,7 @@ Found 3 outliers among 100 measurements (3.00%)
 ```
 
 By avoiding the need to copy opaque bytes entirely, even XDR messages containing
-large amounts of data typically deserialise in 1ms or less on a modern CPU in
+large amounts of data typically deserialise in 1us or less on a modern CPU in
 O(n) time and space.
 
 ## Library functionality
@@ -62,6 +62,10 @@ bytes = "0.5"
 
 Then either generate the code as part of a build script (preferred), or manually
 using the CLI.
+
+To view the generated types, either export the generated types in your
+application and use `cargo doc`, or use the CLI to produce the generated code
+directly for reading.
 
 ### Build Script
 
