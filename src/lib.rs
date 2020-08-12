@@ -14,16 +14,17 @@
 //!
 //! And add a `build.rs` at the crate root (not in `src`!):
 //!
-//! ```rust
+//! ```no_run
+//! # std::env::set_var("OUT_DIR", "./");
 //! fn main() {
 //!     // Tell Cargo to regenerate the types if the XDR spec changes
-//!     println!("cargo:rerun-if-changed=src/xdr_spec.x");
+//!     println!("cargo:rerun-if-changed=xdr_spec.x");
 //!
 //!     // Read from xdr_spec.x, writing the generated code to out.rs
 //!     std::fs::write(
 //!         std::path::Path::new(std::env::var("OUT_DIR").unwrap().as_str()).join("out.rs"),
 //!         fastxdr::Generator::default()
-//!             .generate(include_str!("src/xdr_spec.x"))
+//!             .generate(include_str!("xdr_spec.x"))
 //!             .unwrap(),
 //!     )
 //!     .unwrap();
@@ -32,7 +33,7 @@
 //!
 //! And then include the generated file in your application:
 //!
-//! ```rust
+//! ```compile_fail
 //! // Where out.rs is the filename from above
 //! include!(concat!(env!("OUT_DIR"), "/out.rs"));
 //! use xdr::*;

@@ -288,6 +288,7 @@ mod xdr {
         }
     }
 
+    #[inline]
     fn pad_length(l: usize) -> usize {
         if l % 4 == 0 {
             return 0;
