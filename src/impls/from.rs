@@ -4,19 +4,6 @@ use crate::impls::template::*;
 use crate::indexes::*;
 use crate::Result;
 
-impl std::fmt::Display for ReferenceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ReferenceType::ByValue => "&mut *v",
-                ReferenceType::ByRef => "&mut v",
-            }
-        )
-    }
-}
-
 /// TypeResolve controls how callees should handle XDR type aliases.
 ///
 /// `None` instructs the callee to use the type alias directly, while

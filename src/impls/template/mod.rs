@@ -12,3 +12,16 @@ pub enum ReferenceType {
     ByValue,
     ByRef,
 }
+
+impl std::fmt::Display for ReferenceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ReferenceType::ByValue => "&mut *v",
+                ReferenceType::ByRef => "&mut v",
+            }
+        )
+    }
+}
