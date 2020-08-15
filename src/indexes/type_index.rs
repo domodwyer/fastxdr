@@ -9,14 +9,18 @@ pub enum AstType<'a> {
     Typedef(Typedef<'a>),
 }
 
-impl<'a> AstType<'a> {
-    pub fn to_string(&self) -> String {
-        match self {
-            AstType::Struct(s) => s.name().to_string(),
-            AstType::Union(s) => s.name().to_string(),
-            AstType::Enum(s) => s.name.to_string(),
-            AstType::Typedef(s) => s.target.as_str().to_string(),
-        }
+impl<'a> std::fmt::Display for AstType<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                AstType::Struct(s) => s.name(),
+                AstType::Union(s) => s.name(),
+                AstType::Enum(s) => s.name.as_str(),
+                AstType::Typedef(s) => s.target.as_str(),
+            }
+        )
     }
 }
 
