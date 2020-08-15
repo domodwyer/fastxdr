@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/domodwyer/pre-commit
+    rev: v3.0.0
+    hooks:
+      - id: rust-clippy
+        stages: [commit, push]
+      
+      - id: rust-test
+        stages: [commit, push]
+
+      - id: todo-tags
+        args: ["--regex='.*'"]
+        stages: [commit, push]
