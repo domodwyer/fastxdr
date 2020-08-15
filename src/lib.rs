@@ -43,6 +43,8 @@
 //! application and use `cargo doc`, or use the CLI to produce the generated
 //! code directly for reading.
 
+#![allow(clippy::needless_doctest_main)]
+
 pub mod ast;
 pub mod impls;
 pub mod indexes;
@@ -58,7 +60,7 @@ use std::fmt::Write;
 #[grammar = "xdr.pest"]
 pub(crate) struct XDRParser;
 
-pub const DEFAULT_DERIVE: &'static str = "#[derive(Debug, PartialEq)]";
+pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq)]";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + 'static>>;
 
@@ -78,7 +80,6 @@ impl Generator {
     pub fn with_derive<D: AsRef<str>>(self, derive: D) -> Self {
         Self {
             derive: derive.as_ref().to_string(),
-            ..self
         }
     }
 

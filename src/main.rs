@@ -4,7 +4,7 @@ use std::env;
 
 fn main() -> Result<()> {
     if env::args().len() < 2 {
-        println!("usage: {} ./path/to/spec.x", env::args().nth(0).unwrap());
+        println!("usage: {} ./path/to/spec.x", env::args().next().unwrap());
         std::process::exit(1);
     }
 

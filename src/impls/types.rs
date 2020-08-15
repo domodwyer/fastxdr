@@ -5,7 +5,7 @@ use crate::Result;
 
 // TODO: set lints + docs
 
-const TRAIT_BOUNDS: &'static str = "<T> where T: AsRef<[u8]> + Debug";
+const TRAIT_BOUNDS: &str = "<T> where T: AsRef<[u8]> + Debug";
 
 pub fn print_types<W: std::fmt::Write>(
     w: &mut W,
@@ -97,7 +97,7 @@ pub fn print_types<W: std::fmt::Write>(
                 writeln!(w, "{},", NonDigitName(SafeName(c.as_str())))?;
             }
 
-            if let Some(_) = v.default {
+            if v.default.is_some() {
                 writeln!(w, "default,")?;
             }
 
@@ -142,12 +142,7 @@ pub fn print_types<W: std::fmt::Write>(
                 write!(
                     w,
                     "<{}>",
-                    TRAIT_BOUNDS
-                        .split("where")
-                        .skip(1)
-                        .next()
-                        .unwrap_or("")
-                        .trim()
+                    TRAIT_BOUNDS.split("where").nth(1).unwrap_or("").trim()
                 )?;
             }
 

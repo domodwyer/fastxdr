@@ -11,8 +11,8 @@ where
     fn from(v: T) -> Self {
         v.as_ref()
             .parse::<u32>()
-            .map(|v| Self::Known(v))
-            .unwrap_or(Self::Constant(v.as_ref().to_string()))
+            .map(Self::Known)
+            .unwrap_or_else(|_| Self::Constant(v.as_ref().to_string()))
     }
 }
 
@@ -63,7 +63,7 @@ where
                         .join(", ")
                 )
             })
-            .unwrap_or("".to_string());
+            .unwrap_or_else(|| "".to_string());
 
         match self {
             Self::None(t) => write!(f, "{}{}", t, bounds),

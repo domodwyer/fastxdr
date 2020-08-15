@@ -66,7 +66,7 @@ pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
                         writeln!(w, "Self::{} => 0,", NonDigitName(SafeName(c.as_str())))?;
                     }
 
-                    if let Some(_) = v.default {
+                    if v.default.is_some() {
                         writeln!(w, "Self::default => 0,")?;
                     }
 

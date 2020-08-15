@@ -81,8 +81,8 @@ impl<'a> Node<'a> {
     }
 }
 
-pub(crate) fn walk<'a>(ast: Pair<'a, Rule>) -> Result<Node, Box<dyn std::error::Error + 'static>> {
-    fn collect_values<'a>(ast: Pair<'a, Rule>) -> Vec<Node> {
+pub(crate) fn walk(ast: Pair<Rule>) -> Result<Node, Box<dyn std::error::Error + 'static>> {
+    fn collect_values(ast: Pair<Rule>) -> Vec<Node> {
         ast.into_inner().map(|v| walk(v).unwrap()).collect()
     }
 

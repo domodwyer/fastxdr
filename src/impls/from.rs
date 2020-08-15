@@ -229,7 +229,6 @@ pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
 /// `func` should write the body of the `try_from` implementation to `w`, using
 /// `v` as the Bytes source.
 fn print_try_from<
-    'a,
     W: std::fmt::Write,
     T: FromTemplate,
     F: Fn(&mut W, ReferenceType) -> Result<()>,
@@ -316,7 +315,6 @@ where
                 .get(&type_str)
                 .map(|t| t.to_string())
                 .unwrap_or(type_str)
-                .to_owned();
         }
 
         if generic_index.contains(type_str.as_str()) {
@@ -325,7 +323,7 @@ where
 
         let size = size
             .map(|s| format!("Some({})", s))
-            .unwrap_or("None".to_string());
+            .unwrap_or_else(|| "None".to_string());
 
         match t {
             BasicType::Opaque => write!(w, "v.try_variable_bytes({})?", size)?,

@@ -147,13 +147,13 @@ impl<'a> CaseStmt<'a> {
             _ => unreachable!(),
         };
 
-        if nodes.len() == 0 {
+        if nodes.is_empty() {
             return Self::Fallthrough(case_values);
         }
 
         match nodes.remove(0) {
             Node::UnionDataField(nodes) => Self::Defined(UnionCase::new(case_values, nodes)),
-            Node::UnionVoid => return Self::Void(case_values),
+            Node::UnionVoid => Self::Void(case_values),
             _ => unreachable!(),
         }
     }

@@ -48,36 +48,36 @@ impl<'a> StructField<'a> {
         };
 
         match f.as_slice() {
-            [Node::Type(r), Node::Type(BasicType::Ident(l))] => Self {
-                field_name: l.to_string(),
-                field_value: ArrayType::None(r.to_owned()),
+            [Node::Type(rhs), Node::Type(BasicType::Ident(lhs))] => Self {
+                field_name: lhs.to_string(),
+                field_value: ArrayType::None(rhs.to_owned()),
                 is_optional: false,
             },
-            [Node::Type(r), Node::Type(BasicType::Ident(l)), Node::ArrayVariable(s)] => {
-                let size = match s.trim() {
+            [Node::Type(rhs), Node::Type(BasicType::Ident(lhs)), Node::ArrayVariable(size)] => {
+                let size = match size.trim() {
                     "" => None,
                     s => Some(ArraySize::from(s)),
                 };
                 Self {
-                    field_name: l.to_string(),
-                    field_value: ArrayType::VariableSize(r.to_owned(), size),
+                    field_name: lhs.to_string(),
+                    field_value: ArrayType::VariableSize(rhs.to_owned(), size),
                     is_optional: false,
                 }
             }
-            [Node::Type(r), Node::Type(BasicType::Ident(l)), Node::ArrayFixed(s)] => Self {
-                field_name: l.to_string(),
-                field_value: ArrayType::FixedSize(r.to_owned(), ArraySize::from(s)),
+            [Node::Type(rhs), Node::Type(BasicType::Ident(lhs)), Node::ArrayFixed(size)] => Self {
+                field_name: lhs.to_string(),
+                field_value: ArrayType::FixedSize(rhs.to_owned(), ArraySize::from(size)),
                 is_optional: false,
             },
-            [Node::Type(r), Node::Option(opt)] => {
-                let l = match &opt[0] {
-                    Node::Type(BasicType::Ident(l)) => l,
+            [Node::Type(rhs), Node::Option(opt)] => {
+                let lhs = match &opt[0] {
+                    Node::Type(BasicType::Ident(lhs)) => lhs,
                     _ => panic!("unexpected struct field option layout"),
                 };
 
                 Self {
-                    field_name: l.to_string(),
-                    field_value: ArrayType::None(r.to_owned()),
+                    field_name: lhs.to_string(),
+                    field_value: ArrayType::None(rhs.to_owned()),
                     is_optional: true,
                 }
             }

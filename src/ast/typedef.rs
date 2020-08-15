@@ -21,7 +21,7 @@ impl<'a> Typedef<'a> {
         };
 
         // Optionally, extract the array definition
-        let alias = if vs.len() > 0 {
+        let alias = if !vs.is_empty() {
             match vs.remove(0) {
                 Node::ArrayFixed(s) => ArrayType::FixedSize(alias, ArraySize::from(s)),
 
@@ -43,9 +43,6 @@ impl<'a> Typedef<'a> {
             ArrayType::None(alias)
         };
 
-        Self {
-            target: target,
-            alias: alias,
-        }
+        Self { target, alias }
     }
 }
