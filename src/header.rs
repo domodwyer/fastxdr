@@ -125,7 +125,7 @@ mod xdr {
             }
             match self.get_i32() {
                 0 => Ok(false),
-                1 => Ok(false),
+                1 => Ok(true),
                 _ => Err(Error::InvalidBoolean),
             }
         }
@@ -539,5 +539,18 @@ mod xdr {
 
             assert_eq!(buf.as_ref(), &[]);
             assert_eq!(buf.remaining(), 0);
+        }
+
+        #[test]
+        fn test_try_bool() {
+            let mut buf = BytesMut::new();
+            buf.put_u32(0);
+            buf.put_u32(1);
+            buf.put_u32(2);
+            let mut buf = buf.freeze();
+
+            assert_eq!(buf.try_bool(), Ok(false));
+            assert_eq!(buf.try_bool(), Ok(true));
+            assert!(buf.try_bool().is_err());
         }
     }
