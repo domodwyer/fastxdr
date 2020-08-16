@@ -24,7 +24,7 @@ pub(crate) enum Node<'a> {
 }
 
 impl<'a> Node<'a> {
-    pub fn ident_str(&'a self) -> &'a str {
+    pub(crate) fn ident_str(&'a self) -> &'a str {
         match self {
             Node::Ident(v) => match v.trim() {
                 "type" => "type_t",
@@ -37,7 +37,7 @@ impl<'a> Node<'a> {
     }
 
     #[cfg(test)]
-    pub fn into_inner(self) -> Vec<Node<'a>> {
+    pub(crate) fn into_inner(self) -> Vec<Node<'a>> {
         match self {
             Self::Option(v) => v,
             Self::UnionCase(v) => v,

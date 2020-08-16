@@ -7,7 +7,7 @@ pub struct Struct {
 }
 
 impl Struct {
-    pub(crate) fn new<'a>(vs: Vec<Node<'a>>) -> Self {
+    pub(crate) fn new(vs: Vec<Node<'_>>) -> Self {
         let name = vs[0].ident_str().to_string();
 
         let mut fields = Vec::new();
@@ -41,7 +41,7 @@ pub struct StructField {
 }
 
 impl StructField {
-    pub(crate) fn new<'a>(v: Node<'a>) -> Self {
+    pub(crate) fn new(v: Node<'_>) -> Self {
         let f = match v {
             Node::StructDataField(f) => f,
             e => panic!("not a struct field: {:?}", e),

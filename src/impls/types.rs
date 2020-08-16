@@ -2,8 +2,6 @@ use super::{NonDigitName, SafeName};
 use crate::ast::{indexes::*, ArrayType, Ast, BasicType};
 use crate::Result;
 
-// TODO: set lints + docs
-
 const TRAIT_BOUNDS: &str = "<T> where T: AsRef<[u8]> + Debug";
 
 pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Result<()> {

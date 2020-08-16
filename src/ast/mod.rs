@@ -37,6 +37,7 @@ use std::convert::TryFrom;
 #[grammar = "xdr.pest"]
 pub(crate) struct XDRParser;
 
+#[derive(Debug)]
 pub struct Ast {
     constant_index: ConstantIndex,
     generic_index: GenericIndex,
@@ -46,7 +47,7 @@ pub struct Ast {
 /// The `Ast` type provides high-level access to elements of the AST read from
 /// an XDR spec.
 impl Ast {
-    pub fn new<'s>(xdr: &'s str) -> Result<Self> {
+    pub fn new(xdr: &str) -> Result<Self> {
         // Tokenise the input
         let mut root = XDRParser::parse(Rule::item, xdr)?;
         // Parse into an AST
@@ -83,9 +84,9 @@ impl Ast {
 //
 // These higher-level types will then be extracted and added to the type index
 // later.
-fn walk(ast: Pair<Rule>) -> Node {
-    fn collect_values(ast: Pair<Rule>) -> Vec<Node> {
-        ast.into_inner().map(|v| walk(v)).collect()
+fn walk(ast: Pair<'_, Rule>) -> Node<'_> {
+    fn collect_values(ast: Pair<'_, Rule>) -> Vec<Node<'_>> {
+        ast.into_inner().map(walk).collect()
     }
 
     match ast.as_rule() {

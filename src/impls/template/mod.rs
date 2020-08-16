@@ -5,8 +5,8 @@ pub trait FromTemplate: Copy {
     fn ref_type(&self) -> ReferenceType;
 }
 
-/// ReferenceType defines how the generated code should pass type instances when
-/// decoding nested data structures.
+/// `ReferenceType` defines how the generated code should pass type instances
+/// when decoding nested data structures.
 #[derive(Debug, Clone, Copy)]
 pub enum ReferenceType {
     ByValue,

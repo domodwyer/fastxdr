@@ -16,7 +16,7 @@ pub struct Union {
 }
 
 impl Union {
-    pub(crate) fn new(vs: Vec<Node>) -> Self {
+    pub(crate) fn new(vs: Vec<Node<'_>>) -> Self {
         let name = vs[0].ident_str().to_string();
 
         let mut cases = Vec::new();
@@ -102,7 +102,7 @@ pub struct UnionCase {
 }
 
 impl UnionCase {
-    pub(crate) fn new(case_values: Vec<String>, field: Vec<Node>) -> Self {
+    pub(crate) fn new(case_values: Vec<String>, field: Vec<Node<'_>>) -> Self {
         match field.as_slice() {
             [Node::Type(t), Node::Type(BasicType::Ident(l))] => Self {
                 case_values,
@@ -133,7 +133,7 @@ enum CaseStmt {
 }
 
 impl CaseStmt {
-    fn parse(mut case_values: Vec<String>, mut nodes: Vec<Node>) -> Self {
+    fn parse(mut case_values: Vec<String>, mut nodes: Vec<Node<'_>>) -> Self {
         match nodes.remove(0) {
             Node::Type(t) => case_values.push(t.as_str().to_string()),
             Node::UnionVoid => {

@@ -20,5 +20,5 @@ union choice switch (BIG_NUMBERS num) {
 
 struct data {
 	BIG_NUMBERS        major;
-	BIG_NUMBERS        minor;
+	int        		   minor;
 };
