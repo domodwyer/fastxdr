@@ -2,17 +2,17 @@ use crate::ast::{BasicType, CompoundType, Node};
 use std::collections::HashSet;
 
 #[derive(Debug)]
-pub struct GenericIndex<'a>(pub HashSet<&'a str>);
+pub struct GenericIndex(pub HashSet<String>);
 
-impl<'a> GenericIndex<'a> {
-    pub(crate) fn new(ast: &'a Node) -> GenericIndex<'a> {
+impl GenericIndex {
+    pub(crate) fn new<'a>(ast: &'a Node<'a>) -> GenericIndex {
         // Define a recursive ast walker that visits all values in the tree, looking
         // for "opaque" types.
         //
         // Types containing opaque types, and types containing those types (and so
         // on) are added to index to build a full set of type names that require
         // generic bounds.
-        fn recurse<'a>(v: &'a Node, index: &mut HashSet<&'a str>) -> bool {
+        fn recurse<'a>(v: &'a Node<'a>, index: &mut HashSet<String>) -> bool {
             // Get the type name to see if it is already marked.
             //
             // Only structs, unions and typedefs can contain sub-types that may be
@@ -35,7 +35,7 @@ impl<'a> GenericIndex<'a> {
             let contains_opaque = match v {
                 Node::Type(v) => match v {
                     BasicType::Opaque => true,
-                    BasicType::Ident(i) => index.contains(i.as_ref()),
+                    BasicType::Ident(i) => index.contains(i.as_str()),
                     _ => false,
                 },
 
@@ -43,12 +43,12 @@ impl<'a> GenericIndex<'a> {
                 // types that themselves contain opaques.
                 Node::Struct(v) => v.inner_types().iter().any(|t| match t.unwrap_array() {
                     BasicType::Opaque => true,
-                    BasicType::Ident(i) => index.contains(i.as_ref()),
+                    BasicType::Ident(i) => index.contains(i.as_str()),
                     _ => false,
                 }),
                 Node::Union(v) => v.inner_types().iter().any(|t| match t.unwrap_array() {
                     BasicType::Opaque => true,
-                    BasicType::Ident(i) => index.contains(i.as_ref()),
+                    BasicType::Ident(i) => index.contains(i.as_str()),
                     _ => false,
                 }),
 
@@ -87,7 +87,7 @@ impl<'a> GenericIndex<'a> {
             // the "needs a generic" type index and return.
             if let Some(name) = name {
                 if contains_opaque {
-                    index.insert(name);
+                    index.insert(name.to_string());
                     return true;
                 }
             }
@@ -95,7 +95,7 @@ impl<'a> GenericIndex<'a> {
             contains_opaque
         };
 
-        let mut index: HashSet<&'a str> = HashSet::new();
+        let mut index: HashSet<String> = HashSet::new();
         let mut last_size: isize = -1;
         while last_size != index.len() as isize {
             last_size = index.len() as isize;
@@ -113,8 +113,6 @@ impl<'a> GenericIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     #[test]
     fn test_generic_pushup_structs() {
@@ -131,16 +129,15 @@ struct another {
 };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-        let got = GenericIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.generics();
 
         let mut want = HashSet::new();
         want.insert("stateid4");
         want.insert("generic_field");
         want.insert("another");
 
-        let mut got: Vec<&str> = got.0.iter().cloned().collect();
+        let mut got: Vec<String> = got.0.iter().cloned().collect();
         let mut want: Vec<&str> = want.iter().cloned().collect();
 
         let got = got.as_mut_slice();
@@ -167,16 +164,15 @@ struct stateid4 {
 };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-        let got = GenericIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.generics();
 
         let mut want = HashSet::new();
         want.insert("stateid4");
         want.insert("generic_field");
         want.insert("another");
 
-        let mut got: Vec<&str> = got.0.iter().cloned().collect();
+        let mut got: Vec<String> = got.0.iter().cloned().collect();
         let mut want: Vec<&str> = want.iter().cloned().collect();
 
         let got = got.as_mut_slice();
@@ -201,9 +197,8 @@ struct another {
 };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-        let got = GenericIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.generics();
 
         let mut want = HashSet::new();
         want.insert("attrlist4");
@@ -212,7 +207,7 @@ struct another {
         want.insert("nfs_fh4");
         want.insert("another");
 
-        let mut got: Vec<&str> = got.0.iter().cloned().collect();
+        let mut got: Vec<String> = got.0.iter().cloned().collect();
         let mut want: Vec<&str> = want.iter().cloned().collect();
 
         let got = got.as_mut_slice();
@@ -240,16 +235,15 @@ union READ4res switch (nfsstat4 status) {
 };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-        let got = GenericIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.generics();
 
         let mut want = HashSet::new();
 
         want.insert("READ4resok");
         want.insert("READ4res");
 
-        let mut got: Vec<&str> = got.0.iter().cloned().collect();
+        let mut got: Vec<String> = got.0.iter().cloned().collect();
         let mut want: Vec<&str> = want.iter().cloned().collect();
 
         let got = got.as_mut_slice();

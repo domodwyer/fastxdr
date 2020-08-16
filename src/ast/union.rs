@@ -1,22 +1,22 @@
 use super::*;
 
-#[derive(Debug, PartialEq)]
-pub struct UnionSwitch<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnionSwitch {
     pub var_name: String,
-    pub var_type: BasicType<'a>,
+    pub var_type: BasicType,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Union<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Union {
     pub name: String,
-    pub cases: Vec<UnionCase<'a>>,
-    pub default: Option<UnionCase<'a>>,
+    pub cases: Vec<UnionCase>,
+    pub default: Option<UnionCase>,
     pub void_cases: Vec<String>,
-    pub switch: UnionSwitch<'a>,
+    pub switch: UnionSwitch,
 }
 
-impl<'a> Union<'a> {
-    pub fn new(vs: Vec<Node<'a>>) -> Self {
+impl Union {
+    pub(crate) fn new(vs: Vec<Node>) -> Self {
         let name = vs[0].ident_str().to_string();
 
         let mut cases = Vec::new();
@@ -73,7 +73,7 @@ impl<'a> Union<'a> {
     }
 }
 
-impl<'a> CompoundType for Union<'a> {
+impl CompoundType for Union {
     fn inner_types(&self) -> Vec<&ArrayType<BasicType>> {
         self.cases
             .iter()
@@ -90,19 +90,19 @@ impl<'a> CompoundType for Union<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct UnionCase<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnionCase {
     /// The case values that map to this field name and type.
     ///
     /// This can be more than one value when the union contains fallthrough
     /// statements.
     pub case_values: Vec<String>,
     pub field_name: String,
-    pub field_value: ArrayType<BasicType<'a>>,
+    pub field_value: ArrayType<BasicType>,
 }
 
-impl<'a> UnionCase<'a> {
-    pub fn new(case_values: Vec<String>, field: Vec<Node<'a>>) -> Self {
+impl UnionCase {
+    pub(crate) fn new(case_values: Vec<String>, field: Vec<Node>) -> Self {
         match field.as_slice() {
             [Node::Type(t), Node::Type(BasicType::Ident(l))] => Self {
                 case_values,
@@ -121,19 +121,19 @@ impl<'a> UnionCase<'a> {
     }
 }
 
-enum CaseStmt<'a> {
+enum CaseStmt {
     /// A case statement with no fields defined, falling through to the next
     /// case statement.
     Fallthrough(Vec<String>),
 
     /// A fully-defined case statement, with a case value and fields.
-    Defined(UnionCase<'a>),
+    Defined(UnionCase),
 
     Void(Vec<String>),
 }
 
-impl<'a> CaseStmt<'a> {
-    fn parse(mut case_values: Vec<String>, mut nodes: Vec<Node<'a>>) -> Self {
+impl CaseStmt {
+    fn parse(mut case_values: Vec<String>, mut nodes: Vec<Node>) -> Self {
         match nodes.remove(0) {
             Node::Type(t) => case_values.push(t.as_str().to_string()),
             Node::UnionVoid => {
@@ -162,9 +162,6 @@ impl<'a> CaseStmt<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
-    use std::borrow::Cow;
 
     macro_rules! parse {
         ($input: expr) => {{
@@ -203,20 +200,20 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "createattrs");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("fattr4")))
+            ArrayType::None(BasicType::Ident("fattr4".to_string()))
         );
 
         assert_eq!(&got.cases[1].case_values, &["EXCLUSIVE4"]);
         assert_eq!(got.cases[1].field_name, "createverf");
         assert_eq!(
             got.cases[1].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("verifier4")))
+            ArrayType::None(BasicType::Ident("verifier4".to_string()))
         );
 
         assert_eq!(got.switch.var_name, "mode");
         assert_eq!(
             got.switch.var_type,
-            BasicType::Ident(Cow::from("createmode4"))
+            BasicType::Ident("createmode4".to_string())
         );
     }
 
@@ -242,20 +239,20 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "createattrs");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("fattr4")))
+            ArrayType::None(BasicType::Ident("fattr4".to_string()))
         );
 
         assert_eq!(&got.cases[1].case_values, &["EXCLUSIVE4"]);
         assert_eq!(got.cases[1].field_name, "createverf");
         assert_eq!(
             got.cases[1].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("verifier4")))
+            ArrayType::None(BasicType::Ident("verifier4".to_string()))
         );
 
         assert_eq!(got.switch.var_name, "mode");
         assert_eq!(
             got.switch.var_type,
-            BasicType::Ident(Cow::from("createmode4"))
+            BasicType::Ident("createmode4".to_string())
         );
     }
 
@@ -279,14 +276,17 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "lock_stateid");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("stateid4")))
+            ArrayType::None(BasicType::Ident("stateid4".to_string()))
         );
 
         assert_eq!(got.void_cases.len(), 1);
         assert_eq!(&got.void_cases, &["default"]);
 
         assert_eq!(got.switch.var_name, "status");
-        assert_eq!(got.switch.var_type, BasicType::Ident(Cow::from("nfsstat4")));
+        assert_eq!(
+            got.switch.var_type,
+            BasicType::Ident("nfsstat4".to_string())
+        );
     }
 
     #[test]
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "lock_stateid");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("stateid4")))
+            ArrayType::None(BasicType::Ident("stateid4".to_string()))
         );
 
         assert_eq!(got.void_cases.len(), 0);
@@ -317,11 +317,14 @@ mod tests {
         assert_eq!(default.field_name, "field_name");
         assert_eq!(
             default.field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("type_name")))
+            ArrayType::None(BasicType::Ident("type_name".to_string()))
         );
 
         assert_eq!(got.switch.var_name, "status");
-        assert_eq!(got.switch.var_type, BasicType::Ident(Cow::from("nfsstat4")));
+        assert_eq!(
+            got.switch.var_type,
+            BasicType::Ident("nfsstat4".to_string())
+        );
     }
 
     #[test]
@@ -344,7 +347,7 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "lock_stateid");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("stateid4")))
+            ArrayType::None(BasicType::Ident("stateid4".to_string()))
         );
 
         assert_eq!(got.void_cases, &["something"]);
@@ -354,11 +357,14 @@ mod tests {
         assert_eq!(default.field_name, "field_name");
         assert_eq!(
             default.field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("type_name")))
+            ArrayType::None(BasicType::Ident("type_name".to_string()))
         );
 
         assert_eq!(got.switch.var_name, "status");
-        assert_eq!(got.switch.var_type, BasicType::Ident(Cow::from("nfsstat4")));
+        assert_eq!(
+            got.switch.var_type,
+            BasicType::Ident("nfsstat4".to_string())
+        );
     }
 
     #[test]
@@ -382,7 +388,7 @@ mod tests {
         assert_eq!(got.cases[0].field_name, "lock_stateid");
         assert_eq!(
             got.cases[0].field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("stateid4")))
+            ArrayType::None(BasicType::Ident("stateid4".to_string()))
         );
 
         assert_eq!(got.void_cases, &["another", "something",]);
@@ -392,10 +398,13 @@ mod tests {
         assert_eq!(default.field_name, "field_name");
         assert_eq!(
             default.field_value,
-            ArrayType::None(BasicType::Ident(Cow::from("type_name")))
+            ArrayType::None(BasicType::Ident("type_name".to_string()))
         );
 
         assert_eq!(got.switch.var_name, "status");
-        assert_eq!(got.switch.var_type, BasicType::Ident(Cow::from("nfsstat4")));
+        assert_eq!(
+            got.switch.var_type,
+            BasicType::Ident("nfsstat4".to_string())
+        );
     }
 }

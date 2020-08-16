@@ -1,13 +1,13 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Typedef<'a> {
-    pub target: BasicType<'a>,
-    pub alias: ArrayType<BasicType<'a>>,
+pub struct Typedef {
+    pub target: BasicType,
+    pub alias: ArrayType<BasicType>,
 }
 
-impl<'a> Typedef<'a> {
-    pub fn new(mut vs: Vec<Node<'a>>) -> Self {
+impl Typedef {
+    pub(crate) fn new<'a>(mut vs: Vec<Node<'a>>) -> Self {
         // Extract the target type
         let target = match vs.remove(0) {
             Node::Type(t) => t,

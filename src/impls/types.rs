@@ -1,5 +1,5 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::{ArrayType, BasicType, Node};
+use crate::ast::{ArrayType, Ast, BasicType};
 use crate::indexes::*;
 use crate::Result;
 
@@ -7,172 +7,150 @@ use crate::Result;
 
 const TRAIT_BOUNDS: &str = "<T> where T: AsRef<[u8]> + Debug";
 
-pub fn print_types<W: std::fmt::Write>(
-    w: &mut W,
-    item: &Node,
-    generic_index: &GenericIndex,
-    derive: &str,
-) -> Result<()> {
-    match item {
-        Node::EOF => {}
-        Node::Root(v) => {
-            for field in v.iter() {
-                print_types(w, field, generic_index, derive)?;
-            }
+pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Result<()> {
+    for item in ast.constants().iter() {
+        if !item.1.contains("::") {
+            writeln!(w, "pub const {}: u32 = {};", item.0, item.1)?;
         }
-        Node::Struct(v) => {
-            writeln!(w, "{}", derive)?;
-            write!(w, "pub struct {}", v.name)?;
-            if generic_index.contains(v.name.as_str()) {
-                write!(w, "{}", TRAIT_BOUNDS)?;
-            }
+    }
 
-            writeln!(w, " {{")?;
-            for f in v.fields.iter() {
-                write!(w, "pub {}: ", SafeName(&f.field_name))?;
-
-                // Optional fields require boxing to allow a self-referential
-                // type chain
-                if f.is_optional {
-                    write!(w, "Option<Box<")?;
+    for item in ast.types().iter() {
+        match item {
+            AstType::Struct(v) => {
+                writeln!(w, "{}", derive)?;
+                write!(w, "pub struct {}", v.name)?;
+                if ast.generics().contains(v.name.as_str()) {
+                    write!(w, "{}", TRAIT_BOUNDS)?;
                 }
 
-                // For each field, replace any "opaque" types with T, which will
-                // be generic for AsRef<[u8]>.
-                //
-                // For each ident, check if it is in the generic index, and if
-                // so, append <T> for the AsRef.
-                match f.field_value.unwrap_array() {
-                    BasicType::Opaque => write!(w, "T")?,
-                    BasicType::String => write!(w, "String")?,
-                    BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
-                        f.field_value
-                            .write_with_bounds(w, Some(vec!["T"].as_ref()))?;
+                writeln!(w, " {{")?;
+                for f in v.fields.iter() {
+                    write!(w, "pub {}: ", SafeName(&f.field_name))?;
+
+                    // Optional fields require boxing to allow a self-referential
+                    // type chain
+                    if f.is_optional {
+                        write!(w, "Option<Box<")?;
                     }
-                    _ => write!(w, "{}", f.field_value)?,
-                }
 
-                if f.is_optional {
-                    write!(w, ">>")?;
-                }
-
-                writeln!(w, ",")?;
-            }
-            writeln!(w, "}}")?;
-        }
-        Node::Union(v) => {
-            writeln!(w, "{}", derive)?;
-            write!(w, "pub enum {}", v.name())?;
-            if generic_index.contains(v.name()) {
-                write!(w, "{}", TRAIT_BOUNDS)?;
-            }
-
-            writeln!(w, " {{")?;
-            for case in v.cases.iter() {
-                // A single case statement may have many case values tied to it
-                // if fallthrough values are used:
-                //
-                // 	case 1:
-                // 	case 2:
-                // 		// statement
-                //
-                for c_value in case.case_values.iter() {
-                    write!(w, "{}(", NonDigitName(SafeName(&c_value)))?;
-
-                    match case.field_value.unwrap_array() {
+                    // For each field, replace any "opaque" types with T, which will
+                    // be generic for AsRef<[u8]>.
+                    //
+                    // For each ident, check if it is in the generic index, and if
+                    // so, append <T> for the AsRef.
+                    match f.field_value.unwrap_array() {
                         BasicType::Opaque => write!(w, "T")?,
                         BasicType::String => write!(w, "String")?,
-                        BasicType::Ident(i) if generic_index.contains(i.as_ref()) => {
-                            write!(w, "{}<T>", i.as_ref())?
+                        BasicType::Ident(i) if ast.generics().contains(i.as_ref()) => {
+                            f.field_value
+                                .write_with_bounds(w, Some(vec!["T"].as_ref()))?;
                         }
-                        _ => write!(w, "{}", case.field_value)?,
+                        _ => write!(w, "{}", f.field_value)?,
                     }
 
-                    writeln!(w, "),")?;
+                    if f.is_optional {
+                        write!(w, ">>")?;
+                    }
+
+                    writeln!(w, ",")?;
+                }
+                writeln!(w, "}}")?;
+            }
+            AstType::Union(v) => {
+                writeln!(w, "{}", derive)?;
+                write!(w, "pub enum {}", v.name())?;
+                if ast.generics().contains(v.name()) {
+                    write!(w, "{}", TRAIT_BOUNDS)?;
+                }
+
+                writeln!(w, " {{")?;
+                for case in v.cases.iter() {
+                    // A single case statement may have many case values tied to it
+                    // if fallthrough values are used:
+                    //
+                    // 	case 1:
+                    // 	case 2:
+                    // 		// statement
+                    //
+                    for c_value in case.case_values.iter() {
+                        write!(w, "{}(", NonDigitName(SafeName(&c_value)))?;
+
+                        match case.field_value.unwrap_array() {
+                            BasicType::Opaque => write!(w, "T")?,
+                            BasicType::String => write!(w, "String")?,
+                            BasicType::Ident(i) if ast.generics().contains(i.as_ref()) => {
+                                write!(w, "{}<T>", i)?
+                            }
+                            _ => write!(w, "{}", case.field_value)?,
+                        }
+
+                        writeln!(w, "),")?;
+                    }
+                }
+
+                // There may also be several "void" cases
+                for c in v.void_cases.iter() {
+                    writeln!(w, "{},", NonDigitName(SafeName(c.as_str())))?;
+                }
+
+                if v.default.is_some() {
+                    writeln!(w, "default,")?;
+                }
+
+                writeln!(w, "}}")?;
+            }
+            AstType::Enum(v) => {
+                writeln!(w, "{}", derive)?;
+                writeln!(w, "pub enum {} {{", v.name)?;
+                for var in v.variants.iter() {
+                    writeln!(w, "{} = {},", var.name, var.value)?;
+                }
+                writeln!(w, "}}")?;
+            }
+            AstType::Typedef(v) => {
+                // No typedefs to self - this occurs because the ident/type values
+                // convert common types directly.
+                if v.target == *v.alias.unwrap_array() {
+                    continue;
+                }
+
+                // For typedefs, the array identifier is defined on the alias.
+                //
+                // Wrap the target in the same array as the alias to generate the
+                // array container for the target.
+                let target = match &v.alias {
+                    ArrayType::None(_) => ArrayType::None(&v.target),
+                    ArrayType::FixedSize(_, s) => ArrayType::FixedSize(&v.target, s.clone()),
+                    ArrayType::VariableSize(_, s) => ArrayType::VariableSize(&v.target, s.clone()),
+                };
+
+                writeln!(w, "{}", derive)?;
+                write!(w, "pub struct {}", v.alias.unwrap_array().as_str())?;
+                if ast.generics().contains(v.target.as_str()) || v.target.is_opaque() {
+                    write!(
+                        w,
+                        "<{}>",
+                        TRAIT_BOUNDS.split("where").nth(1).unwrap_or("").trim()
+                    )?;
+                }
+
+                // If the target is the opaque type, it should not have array
+                // quantifiers - the opaque type has a variable length already.
+                if v.target.is_opaque() {
+                    writeln!(w, "(pub T);")?;
+                    continue;
+                }
+
+                if ast.generics().contains(v.target.as_str()) {
+                    write!(w, " (pub ")?;
+                    target.write_with_bounds(w, Some(&["T"]))?;
+                    writeln!(w, ");")?;
+                } else {
+                    writeln!(w, "(pub {});", target)?;
                 }
             }
-
-            // There may also be several "void" cases
-            for c in v.void_cases.iter() {
-                writeln!(w, "{},", NonDigitName(SafeName(c.as_str())))?;
-            }
-
-            if v.default.is_some() {
-                writeln!(w, "default,")?;
-            }
-
-            writeln!(w, "}}")?;
-        }
-        Node::Enum(v) => {
-            writeln!(w, "{}", derive)?;
-            writeln!(w, "pub enum {} {{", v.name)?;
-            for var in v.variants.iter() {
-                writeln!(w, "{} = {},", var.name, var.value)?;
-            }
-            writeln!(w, "}}")?;
-        }
-        Node::Constant(v) => {
-            writeln!(
-                w,
-                "pub const {}: u32 = {};",
-                v[0].ident_str(),
-                v[1].ident_str()
-            )?;
-        }
-        Node::Typedef(v) => {
-            // No typedefs to self - this occurs because the ident/type values
-            // convert common types directly.
-            if v.target == *v.alias.unwrap_array() {
-                return Ok(());
-            }
-
-            // For typedefs, the array identifier is defined on the alias.
-            //
-            // Wrap the target in the same array as the alias to generate the
-            // array container for the target.
-            let target = match &v.alias {
-                ArrayType::None(_) => ArrayType::None(&v.target),
-                ArrayType::FixedSize(_, s) => ArrayType::FixedSize(&v.target, s.clone()),
-                ArrayType::VariableSize(_, s) => ArrayType::VariableSize(&v.target, s.clone()),
-            };
-
-            writeln!(w, "{}", derive)?;
-            write!(w, "pub struct {}", v.alias.unwrap_array().as_str())?;
-            if generic_index.contains(v.target.as_str()) || v.target.is_opaque() {
-                write!(
-                    w,
-                    "<{}>",
-                    TRAIT_BOUNDS.split("where").nth(1).unwrap_or("").trim()
-                )?;
-            }
-
-            // If the target is the opaque type, it should not have array
-            // quantifiers - the opaque type has a variable length already.
-            if v.target.is_opaque() {
-                return Ok(writeln!(w, "(pub T);")?);
-            }
-
-            if generic_index.contains(v.target.as_str()) {
-                write!(w, " (pub ")?;
-                target.write_with_bounds(w, Some(&["T"]))?;
-                writeln!(w, ");")?;
-            } else {
-                writeln!(w, "(pub {});", target)?;
-            }
-        }
-        Node::Array(_)
-        | Node::ArrayVariable(_)
-        | Node::ArrayFixed(_)
-        | Node::StructDataField(_)
-        | Node::UnionDataField(_)
-        | Node::UnionDefault(_)
-        | Node::UnionVoid
-        | Node::EnumVariant(_)
-        | Node::Ident(_)
-        | Node::Type(_)
-        | Node::Option(_)
-        | Node::UnionCase(_) => unreachable!(),
-    };
+        };
+    }
 
     Ok(())
 }
@@ -180,25 +158,15 @@ pub fn print_types<W: std::fmt::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     macro_rules! test_convert {
         ($name: ident, $input: expr, $want: expr) => {
             #[test]
             fn $name() {
-                let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
-                let ast = walk(ast.next().unwrap()).unwrap();
-                let generic_index = GenericIndex::new(&ast);
+                let ast = Ast::new($input).unwrap();
 
                 let mut got = String::new();
-                print_types(
-                    &mut got,
-                    &ast,
-                    &generic_index,
-                    "#[derive(Debug, PartialEq)]",
-                )
-                .unwrap();
+                print_types(&mut got, &ast, "#[derive(Debug, PartialEq)]").unwrap();
 
                 assert_eq!(got, $want);
             }
@@ -285,12 +253,12 @@ default,
             };
         "#,
         r#"#[derive(Debug, PartialEq)]
-pub enum u_type_name<T> where T: AsRef<[u8]> + Debug {
-v_1(T),
-}
-#[derive(Debug, PartialEq)]
 pub struct CB_COMPOUND4res<T> where T: AsRef<[u8]> + Debug {
 pub resarray: Vec<u_type_name<T>>,
+}
+#[derive(Debug, PartialEq)]
+pub enum u_type_name<T> where T: AsRef<[u8]> + Debug {
+v_1(T),
 }
 "#
     );
@@ -475,11 +443,11 @@ OPEN4_CREATE = 1,
         r#"#[derive(Debug, PartialEq)]
 pub struct acetype4(pub u32);
 #[derive(Debug, PartialEq)]
-pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
-#[derive(Debug, PartialEq)]
 pub struct sec_oid4<T: AsRef<[u8]> + Debug>(pub T);
 #[derive(Debug, PartialEq)]
 pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
+#[derive(Debug, PartialEq)]
+pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 
@@ -497,14 +465,14 @@ pub struct utf8str_cis<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
         r#"#[derive(Debug, PartialEq)]
 pub struct acemask4(pub u32);
 #[derive(Debug, PartialEq)]
-pub struct utf8str_mixed<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
-#[derive(Debug, PartialEq)]
-pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
-#[derive(Debug, PartialEq)]
 pub struct nfsace4<T> where T: AsRef<[u8]> + Debug {
 pub access_mask: acemask4,
 pub who: utf8str_mixed<T>,
 }
+#[derive(Debug, PartialEq)]
+pub struct utf8str_mixed<T: AsRef<[u8]> + Debug> (pub utf8string<T>);
+#[derive(Debug, PartialEq)]
+pub struct utf8string<T: AsRef<[u8]> + Debug>(pub T);
 "#
     );
 
@@ -537,13 +505,13 @@ pub cb_location: clientaddr4,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+pub struct generic_field<T> where T: AsRef<[u8]> + Debug {
+pub inner: stateid4<T>,
+}
+#[derive(Debug, PartialEq)]
 pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
 pub seqid: u32,
 pub other: T,
-}
-#[derive(Debug, PartialEq)]
-pub struct generic_field<T> where T: AsRef<[u8]> + Debug {
-pub inner: stateid4<T>,
 }
 "#
     );
@@ -560,12 +528,12 @@ pub inner: stateid4<T>,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
-pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
-pub other: T,
-}
-#[derive(Debug, PartialEq)]
 pub enum nfs_argop4<T> where T: AsRef<[u8]> + Debug {
 OP_GETATTR(stateid4<T>),
+}
+#[derive(Debug, PartialEq)]
+pub struct stateid4<T> where T: AsRef<[u8]> + Debug {
+pub other: T,
 }
 "#
     );

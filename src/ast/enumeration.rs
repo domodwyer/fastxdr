@@ -1,13 +1,13 @@
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Enum {
     pub name: String,
     pub variants: Vec<Variant>,
 }
 
 impl<'a> Enum {
-    pub fn new(vs: Vec<Node<'a>>) -> Self {
+    pub(crate) fn new(vs: Vec<Node<'a>>) -> Self {
         let name = vs[0].ident_str().to_string();
 
         let mut vars = Vec::new();
@@ -22,7 +22,7 @@ impl<'a> Enum {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variant {
     pub name: String,
     pub value: i32,
@@ -52,8 +52,6 @@ impl<'a> Variant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     macro_rules! parse {
         ($input: expr) => {{

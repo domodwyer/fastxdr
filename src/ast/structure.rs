@@ -1,13 +1,13 @@
 use super::*;
 
-#[derive(Debug, PartialEq)]
-pub struct Struct<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Struct {
     pub name: String,
-    pub fields: Vec<StructField<'a>>,
+    pub fields: Vec<StructField>,
 }
 
-impl<'a> Struct<'a> {
-    pub fn new(vs: Vec<Node<'a>>) -> Self {
+impl Struct {
+    pub(crate) fn new<'a>(vs: Vec<Node<'a>>) -> Self {
         let name = vs[0].ident_str().to_string();
 
         let mut fields = Vec::new();
@@ -18,12 +18,12 @@ impl<'a> Struct<'a> {
         Struct { name, fields }
     }
 
-    pub fn name(&'a self) -> &'a str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 }
 
-impl<'a> CompoundType for Struct<'a> {
+impl CompoundType for Struct {
     fn inner_types(&self) -> Vec<&ArrayType<BasicType>> {
         self.fields.iter().map(|f| &f.field_value).collect()
     }
@@ -33,15 +33,15 @@ impl<'a> CompoundType for Struct<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct StructField<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
     pub field_name: String,
-    pub field_value: ArrayType<BasicType<'a>>,
+    pub field_value: ArrayType<BasicType>,
     pub is_optional: bool,
 }
 
-impl<'a> StructField<'a> {
-    pub fn new(v: Node<'a>) -> Self {
+impl StructField {
+    pub(crate) fn new<'a>(v: Node<'a>) -> Self {
         let f = match v {
             Node::StructDataField(f) => f,
             e => panic!("not a struct field: {:?}", e),
@@ -96,8 +96,6 @@ impl<'a> StructField<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     macro_rules! parse {
         ($input: expr) => {{

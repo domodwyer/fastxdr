@@ -1,15 +1,11 @@
 use super::*;
-use crate::Rule;
-use pest::iterators::Pair;
-use std::convert::TryFrom;
-
 #[derive(Debug, PartialEq)]
-pub enum Node<'a> {
+pub(crate) enum Node<'a> {
     Ident(&'a str),
-    Type(BasicType<'a>),
+    Type(BasicType),
     Option(Vec<Node<'a>>),
-    Struct(Struct<'a>),
-    Union(Union<'a>),
+    Struct(Struct),
+    Union(Union),
     UnionCase(Vec<Node<'a>>),
     UnionDefault(Vec<Node<'a>>),
     UnionVoid,
@@ -18,7 +14,7 @@ pub enum Node<'a> {
     Array(Vec<Node<'a>>),
     ArrayVariable(&'a str),
     ArrayFixed(&'a str),
-    Typedef(Typedef<'a>),
+    Typedef(Typedef),
     Constant(Vec<Node<'a>>),
     Enum(Enum),
     EnumVariant(Vec<Node<'a>>),
@@ -55,67 +51,4 @@ impl<'a> Node<'a> {
             _ => panic!("no node inner"),
         }
     }
-
-    #[cfg(test)]
-    pub fn unwrap_struct(&'a self) -> &Struct<'a> {
-        if let Self::Struct(s) = self {
-            return s;
-        }
-        panic!("unwrap_struct not a struct")
-    }
-
-    #[cfg(test)]
-    pub fn unwrap_union(&'a self) -> &Union<'a> {
-        if let Self::Union(s) = self {
-            return s;
-        }
-        panic!("unwrap_union not a union")
-    }
-
-    #[cfg(test)]
-    pub fn unwrap_enum(&self) -> &Enum {
-        if let Self::Enum(s) = self {
-            return s;
-        }
-        panic!("unwrap_enum not a enum")
-    }
-}
-
-pub(crate) fn walk(ast: Pair<Rule>) -> Result<Node, Box<dyn std::error::Error + 'static>> {
-    fn collect_values(ast: Pair<Rule>) -> Vec<Node> {
-        ast.into_inner().map(|v| walk(v).unwrap()).collect()
-    }
-
-    let x = match ast.as_rule() {
-        Rule::item => Node::Root(collect_values(ast)),
-        Rule::typedef => Node::Typedef(Typedef::new(collect_values(ast))),
-        Rule::constant => Node::Constant(collect_values(ast)),
-        Rule::ident | Rule::ident_const | Rule::ident_value => {
-            if let Ok(t) = BasicType::try_from(ast.as_str()) {
-                Node::Type(t)
-            } else {
-                Node::Ident(ast.as_str())
-            }
-        }
-        Rule::enum_type => Node::Enum(Enum::new(collect_values(ast))),
-        Rule::enum_variant => Node::EnumVariant(collect_values(ast)),
-        Rule::array => Node::Array(collect_values(ast)),
-        Rule::array_variable => Node::ArrayVariable(ast.into_inner().as_str()),
-        Rule::array_fixed => Node::ArrayFixed(ast.into_inner().as_str()),
-        Rule::struct_type => Node::Struct(Struct::new(collect_values(ast))),
-        Rule::struct_data_field => Node::StructDataField(collect_values(ast)),
-        Rule::union_data_field => Node::UnionDataField(collect_values(ast)),
-        Rule::union => Node::Union(Union::new(collect_values(ast))),
-        Rule::union_case => Node::UnionCase(collect_values(ast)),
-        Rule::union_default => Node::UnionDefault(collect_values(ast)),
-        Rule::union_void => Node::UnionVoid,
-        Rule::option => Node::Option(collect_values(ast)),
-        Rule::basic_type => {
-            Node::Type(BasicType::try_from(ast.as_str()).expect("unrecognised type"))
-        }
-        Rule::EOI => Node::EOF,
-        e => unimplemented!("{:?}", e),
-    };
-
-    Ok(x)
 }

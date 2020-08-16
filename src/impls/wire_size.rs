@@ -1,19 +1,18 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::BasicType;
+use crate::ast::{Ast, BasicType};
 use crate::impls::template::*;
-use crate::indexes::{AstType, GenericIndex, TypeIndex};
+use crate::indexes::AstType;
 use crate::Result;
 
 pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
     mut w: W,
     template: T,
-    type_index: &TypeIndex<'a>,
-    generic_index: &GenericIndex<'a>,
+    ast: &Ast,
 ) -> Result<()> {
-    for item in type_index.iter() {
+    for item in ast.types().iter() {
         match item {
             AstType::Struct(v) => {
-                print_impl(&mut w, template, v.name(), generic_index, |w| {
+                print_impl(&mut w, template, v.name(), ast, |w| {
                     for f in v.fields.iter() {
                         writeln!(w, r#"self.{}.wire_size() +"#, SafeName(&f.field_name))?;
 
@@ -33,7 +32,7 @@ pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
             }
 
             AstType::Union(v) => {
-                print_impl(&mut w, template, v.name(), generic_index, |w| {
+                print_impl(&mut w, template, v.name(), ast, |w| {
                     writeln!(w, "4 + match self {{")?;
                     // Iterate over all the variants of v, including the
                     // default.
@@ -76,7 +75,7 @@ pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
             }
 
             AstType::Enum(v) => {
-                print_impl(&mut w, template, &v.name, generic_index, |w| {
+                print_impl(&mut w, template, &v.name, ast, |w| {
                     writeln!(w, "4")?;
                     Ok(())
                 })?;
@@ -87,7 +86,7 @@ pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
                     &mut w,
                     template,
                     v.alias.unwrap_array().as_str(),
-                    generic_index,
+                    ast,
                     |w| {
                         writeln!(w, "self.0.wire_size()")?;
 
@@ -111,10 +110,10 @@ fn print_impl<W: std::fmt::Write, T: FromTemplate, F: Fn(&mut W) -> Result<()>>(
     mut w: W,
     template: T,
     name: &str,
-    generic_index: &GenericIndex,
+    ast: &Ast,
     func: F,
 ) -> Result<()> {
-    if generic_index.contains(name) {
+    if ast.generics().contains(name) {
         writeln!(w, "impl WireSize for {}<{}> {{", name, template.type_name(),)?;
     } else {
         writeln!(w, r#"impl WireSize for {} {{"#, name)?;
@@ -130,21 +129,15 @@ fn print_impl<W: std::fmt::Write, T: FromTemplate, F: Fn(&mut W) -> Result<()>>(
 mod tests {
     use super::*;
     use crate::impls::template::bytes::RefMutBytes;
-    use crate::indexes::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     macro_rules! test_convert {
         ($name: ident, $input: expr, $want: expr) => {
             #[test]
             fn $name() {
-                let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
-                let ast = walk(ast.next().unwrap()).unwrap();
-                let generic_index = GenericIndex::new(&ast);
-                let type_index = TypeIndex::new(&ast);
+                let ast = Ast::new($input).unwrap();
 
                 let mut got = String::new();
-                print_impl_wire_size(&mut got, RefMutBytes, &type_index, &generic_index).unwrap();
+                print_impl_wire_size(&mut got, RefMutBytes, &ast).unwrap();
 
                 assert_eq!(got, $want);
             }

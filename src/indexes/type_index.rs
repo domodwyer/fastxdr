@@ -2,14 +2,14 @@ use crate::ast::{Enum, Node, Struct, Typedef, Union};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AstType<'a> {
-    Struct(&'a Struct<'a>),
-    Union(&'a Union<'a>),
-    Enum(&'a Enum),
-    Typedef(Typedef<'a>),
+pub enum AstType {
+    Struct(Struct),
+    Union(Union),
+    Enum(Enum),
+    Typedef(Typedef),
 }
 
-impl<'a> std::fmt::Display for AstType<'a> {
+impl std::fmt::Display for AstType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -24,13 +24,14 @@ impl<'a> std::fmt::Display for AstType<'a> {
     }
 }
 
-pub struct TypeIndex<'a>(pub BTreeMap<&'a str, AstType<'a>>);
+#[derive(Debug)]
+pub struct TypeIndex(pub BTreeMap<String, AstType>);
 
-impl<'a> TypeIndex<'a> {
-    pub(crate) fn new(ast: &'a Node) -> Self {
+impl TypeIndex {
+    pub(crate) fn new<'n>(ast: &'n Node<'n>) -> Self {
         // Resolved holds the <new name> -> <existing name> pairs for
         // successfully resolved typedef targets.
-        let mut resolved: BTreeMap<&'a str, AstType> = BTreeMap::new();
+        let mut resolved: BTreeMap<String, AstType> = BTreeMap::new();
 
         if let Node::Root(r) = ast {
             for item in r.iter() {
@@ -38,17 +39,17 @@ impl<'a> TypeIndex<'a> {
                     Node::Typedef(v) => {
                         let alias = v.alias.unwrap_array().as_str();
                         // Try and resolve the original type to a basic type
-                        resolved.insert(alias, AstType::Typedef(v.clone()));
+                        resolved.insert(alias.to_string(), AstType::Typedef(v.clone()));
                     }
                     Node::Struct(v) => {
-                        resolved.insert(v.name(), AstType::Struct(v));
+                        resolved.insert(v.name().to_string(), AstType::Struct(v.clone()));
                     }
                     Node::Union(v) => {
-                        resolved.insert(v.name(), AstType::Union(v));
+                        resolved.insert(v.name().to_string(), AstType::Union(v.clone()));
                     }
                     Node::Enum(v) => {
                         // Record the names of all compound types
-                        resolved.insert(&v.name, AstType::Enum(v));
+                        resolved.insert(v.name.to_string(), AstType::Enum(v.clone()));
                     }
                     _ => continue,
                 };
@@ -64,7 +65,7 @@ impl<'a> TypeIndex<'a> {
     }
 
     /// Returns the type aliased by `name` if `name` is a typedef.
-    pub fn typedef_target<T: AsRef<str>>(&self, name: T) -> Option<&Typedef<'a>> {
+    pub fn typedef_target<T: AsRef<str>>(&self, name: T) -> Option<&Typedef> {
         match self.0.get(name.as_ref()) {
             Some(AstType::Typedef(t)) => Some(t),
             _ => None,
@@ -72,7 +73,7 @@ impl<'a> TypeIndex<'a> {
     }
 
     /// Iterates over the types in the type index.
-    pub fn iter(&self) -> impl std::iter::Iterator<Item = &AstType<'a>> {
+    pub fn iter(&self) -> impl std::iter::Iterator<Item = &AstType> {
         self.0.values()
     }
 }
@@ -81,8 +82,6 @@ impl<'a> TypeIndex<'a> {
 mod tests {
     use super::*;
     use crate::ast::{ArrayType, BasicType};
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     #[test]
     fn test_typedef_unresolvable() {
@@ -90,10 +89,9 @@ mod tests {
             typedef old new;
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let index = ast.types();
 
-        let index = TypeIndex::new(&ast);
         assert_eq!(index.get("old"), None);
         assert_eq!(
             index.get("new").unwrap().clone(),
@@ -124,20 +122,14 @@ mod tests {
             };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-
-        let r = match &ast {
-            Node::Root(r) => r,
-            _ => panic!("not root"),
-        };
+        let ast = crate::ast::Ast::new(input).unwrap();
 
         let mut want = BTreeMap::new();
-        want.insert("s", AstType::Struct(&r[0].unwrap_struct()));
-        want.insert("u", AstType::Union(&r[1].unwrap_union()));
-        want.insert("e", AstType::Enum(&r[2].unwrap_enum()));
+        want.insert("s".to_string(), ast.types().get("s").unwrap().clone());
+        want.insert("u".to_string(), ast.types().get("u").unwrap().clone());
+        want.insert("e".to_string(), ast.types().get("e").unwrap().clone());
 
-        let got = TypeIndex::new(&ast);
+        let got = ast.types();
 
         assert_eq!(got.0, want);
     }
@@ -164,29 +156,15 @@ mod tests {
             typedef uint32_t A;
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-
-        let got = TypeIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.types();
 
         let mut iter = got.iter();
 
-        assert!(match dbg!(iter.next()) {
-            Some(&AstType::Typedef(_)) => true,
-            _ => false,
-        });
-        assert!(match dbg!(iter.next()) {
-            Some(&AstType::Enum(_)) => true,
-            _ => false,
-        });
-        assert!(match dbg!(iter.next()) {
-            Some(&AstType::Struct(_)) => true,
-            _ => false,
-        });
-        assert!(match dbg!(iter.next()) {
-            Some(&AstType::Union(_)) => true,
-            _ => false,
-        });
+        assert!(matches!(iter.next(), Some(&AstType::Typedef(_))));
+        assert!(matches!(iter.next(), Some(&AstType::Enum(_))));
+        assert!(matches!(iter.next(), Some(&AstType::Struct(_))));
+        assert!(matches!(iter.next(), Some(&AstType::Union(_))));
     }
 
     #[test]
@@ -197,33 +175,32 @@ mod tests {
             typedef unsigned int C;
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
+        let ast = crate::ast::Ast::new(input).unwrap();
 
         let mut want = BTreeMap::new();
         want.insert(
-            "A",
+            "A".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
                 alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert(
-            "B",
+            "B".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::U64,
                 alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
-            "C",
+            "C".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
                 alias: ArrayType::None(BasicType::Ident("C".into())),
             }),
         );
 
-        let got = TypeIndex::new(&ast);
+        let got = ast.types();
 
         assert_eq!(got.0, want);
     }
@@ -235,8 +212,7 @@ mod tests {
             typedef A B;
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
+        let ast = crate::ast::Ast::new(input).unwrap();
 
         let typedef = AstType::Typedef(Typedef {
             target: BasicType::Ident("A".into()),
@@ -245,15 +221,15 @@ mod tests {
 
         let mut want = BTreeMap::new();
         want.insert(
-            "A",
+            "A".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::U32,
                 alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
-        want.insert("B", typedef.clone());
+        want.insert("B".to_string(), typedef.clone());
 
-        let got = TypeIndex::new(&ast);
+        let got = ast.types();
         assert_eq!(got.0, want);
 
         assert_eq!(got.get("B"), Some(&typedef));
@@ -276,32 +252,29 @@ mod tests {
             typedef A B;
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
+        let ast = crate::ast::Ast::new(input).unwrap();
 
-        let got = TypeIndex::new(&ast);
-
-        let r = match &ast {
-            Node::Root(r) => r,
-            _ => panic!("not root"),
-        };
+        let got = ast.types();
 
         let mut want = BTreeMap::new();
         want.insert(
-            "A",
+            "A".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
                 alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
         want.insert(
-            "B",
+            "B".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
                 alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
-        want.insert("thing", AstType::Struct(&r[0].unwrap_struct()));
+        want.insert(
+            "thing".to_string(),
+            ast.types().get("thing").unwrap().clone(),
+        );
 
         assert_eq!(got.0, want);
     }
@@ -316,32 +289,28 @@ mod tests {
             };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-
-        let got = TypeIndex::new(&ast);
-
-        let r = match &ast {
-            Node::Root(r) => r,
-            _ => panic!("not root"),
-        };
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.types();
 
         let mut want = BTreeMap::new();
         want.insert(
-            "B",
+            "B".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
                 alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
-            "A",
+            "A".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
                 alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
-        want.insert("thing", AstType::Struct(&r[2].unwrap_struct()));
+        want.insert(
+            "thing".to_string(),
+            ast.types().get("thing").unwrap().clone(),
+        );
 
         assert_eq!(got.0, want);
     }
@@ -356,32 +325,28 @@ mod tests {
             };
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-
-        let got = TypeIndex::new(&ast);
-
-        let r = match &ast {
-            Node::Root(r) => r,
-            _ => panic!("not root"),
-        };
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.types();
 
         let mut want = BTreeMap::new();
         want.insert(
-            "B",
+            "B".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("A".into()),
                 alias: ArrayType::None(BasicType::Ident("B".into())),
             }),
         );
         want.insert(
-            "A",
+            "A".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Ident("thing".into()),
                 alias: ArrayType::None(BasicType::Ident("A".into())),
             }),
         );
-        want.insert("thing", AstType::Enum(&r[2].unwrap_enum()));
+        want.insert(
+            "thing".to_string(),
+            ast.types().get("thing").unwrap().clone(),
+        );
 
         assert_eq!(got.0, want);
     }
@@ -395,14 +360,12 @@ mod tests {
             typedef opaque  verifier4[NFS4_VERIFIER_SIZE];
         "#;
 
-        let mut ast = XDRParser::parse(Rule::item, input).unwrap();
-        let ast = walk(ast.next().unwrap()).unwrap();
-
-        let got = TypeIndex::new(&ast);
+        let ast = crate::ast::Ast::new(input).unwrap();
+        let got = ast.types();
 
         let mut want = BTreeMap::new();
         want.insert(
-            "verifier4",
+            "verifier4".to_string(),
             AstType::Typedef(Typedef {
                 target: BasicType::Opaque,
                 alias: ArrayType::FixedSize(

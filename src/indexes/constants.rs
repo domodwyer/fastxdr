@@ -1,11 +1,11 @@
 use crate::ast::Node;
 use std::collections::BTreeMap;
 
-pub struct ConstantIndex<'a>(pub BTreeMap<&'a str, String>);
+pub struct ConstantIndex(pub BTreeMap<String, String>);
 
-impl<'a> ConstantIndex<'a> {
+impl ConstantIndex {
     /// Build an index of all consts / enums for use in the union switches.
-    pub(crate) fn new(ast: &'a Node) -> ConstantIndex<'a> {
+    pub(crate) fn new<'a>(ast: &'a Node<'a>) -> ConstantIndex {
         let mut case_values = BTreeMap::new();
         if let Node::Root(r) = ast {
             for item in r.iter() {
@@ -13,7 +13,7 @@ impl<'a> ConstantIndex<'a> {
                     Node::Constant(vs) => {
                         // Map constants to themselves, they do not require namespacing.
                         if case_values
-                            .insert(vs[0].ident_str(), vs[1].ident_str().to_string())
+                            .insert(vs[0].ident_str().to_string(), vs[1].ident_str().to_string())
                             .is_some()
                         {
                             panic!("duplicate case keys {}", vs[0].ident_str());
@@ -26,7 +26,10 @@ impl<'a> ConstantIndex<'a> {
                         // become `Status::NFS_OK`.
                         for v in e.variants.iter() {
                             if case_values
-                                .insert(v.name.as_str(), format!("{}::{}", e.name, v.name.as_str()))
+                                .insert(
+                                    v.name.as_str().to_string(),
+                                    format!("{}::{}", e.name, v.name.as_str()),
+                                )
                                 .is_some()
                             {
                                 panic!("duplicate case keys {}", v.name.as_str());
@@ -47,7 +50,7 @@ impl<'a> ConstantIndex<'a> {
     }
 
     /// Iterates over the types in the constant index.
-    pub fn iter(&self) -> impl std::iter::Iterator<Item = (&&str, &String)> {
+    pub fn iter(&self) -> impl std::iter::Iterator<Item = (&String, &String)> {
         self.0.iter()
     }
 }

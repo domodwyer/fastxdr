@@ -1,5 +1,5 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::{ArraySize, ArrayType, BasicType};
+use crate::ast::{ArraySize, ArrayType, Ast, BasicType};
 use crate::impls::template::*;
 use crate::indexes::*;
 use crate::Result;
@@ -27,190 +27,163 @@ impl TypeResolve {
 pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
     mut w: W,
     template: T,
-    generic_index: &GenericIndex<'a>,
-    constant_index: &ConstantIndex<'a>,
-    type_index: &TypeIndex<'a>,
+    ast: &Ast,
 ) -> Result<()> {
-    for item in type_index.iter() {
+    for item in ast.types().iter() {
         match item {
             AstType::Struct(v) => {
-                print_try_from(
-                    &mut w,
-                    template,
-                    v.name.as_str(),
-                    generic_index,
-                    |w, try_from| {
-                        writeln!(w, "Ok({} {{", v.name)?;
-                        for f in v.fields.iter() {
-                            write!(w, "{}: ", SafeName(&f.field_name))?;
-                            if f.is_optional {
-                                // This field is an optional field
-                                //
-                                // Outputs:
-                                // 		match v.try_i32()? {
-                                // 			0 => None,
-                                // 			1 => Some(Box::new(TYPE::try_from(&mut *v)?)),
-                                // 			d => return Err(Error::UnknownVariant(d as i32)),
-                                // 		}
-                                writeln!(w, "{{ match v.try_u32()? {{")?;
-                                writeln!(w, "0 => None,")?;
-                                writeln!(
-                                    w,
-                                    "1 => Some(Box::new({}::try_from({})?)),",
-                                    f.field_value.unwrap_array(),
-                                    try_from
-                                )?;
-                                writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
-                                writeln!(w, "}}}},")?;
-                            } else {
-                                print_decode_array(
-                                    w,
-                                    template,
-                                    &f.field_value,
-                                    type_index,
-                                    constant_index,
-                                    generic_index,
-                                    // Do not resolve the typedef to the target type - instead
-                                    // call try_from on the newtype itself.
-                                    TypeResolve::UseAlias,
-                                    try_from,
-                                )?;
-                                writeln!(w, ",")?;
-                            }
-                        }
-                        writeln!(w, "}})")?;
-                        Ok(())
-                    },
-                )?
-            }
-
-            AstType::Union(v) => {
-                print_try_from(
-                    &mut w,
-                    template,
-                    v.name.as_str(),
-                    generic_index,
-                    |w, try_from| {
-                        write!(w, "let {} = ", SafeName(&v.switch.var_name))?;
-                        print_decode_basic_type(
-                            w,
-                            &v.switch.var_type,
-                            type_index,
-                            TypeResolve::UseTarget,
-                            try_from,
-                        )?;
-                        writeln!(w, "?;")?;
-
-                        writeln!(w, "Ok(match {} {{", SafeName(&v.switch.var_name))?;
-                        for c in v.cases.iter() {
-                            // A single case statement may have many case values tied to it
-                            // if fallthrough values are used:
+                print_try_from(&mut w, template, v.name.as_str(), ast, |w, try_from| {
+                    writeln!(w, "Ok({} {{", v.name)?;
+                    for f in v.fields.iter() {
+                        write!(w, "{}: ", SafeName(&f.field_name))?;
+                        if f.is_optional {
+                            // This field is an optional field
                             //
-                            // 	case 1:
-                            // 	case 2:
-                            // 		// statement
-                            //
-                            for c_value in c.case_values.iter() {
-                                // The case value may be a declared constant or enum value.
-                                //
-                                // Lookup the value in the `constant_index`.
-                                let matcher =
-                                    constant_index.get(c_value.as_str()).unwrap_or(c_value);
-
-                                write!(
-                                    w,
-                                    "{} => Self::{}(",
-                                    SafeName(matcher),
-                                    NonDigitName(SafeName(&c_value))
-                                )?;
-                                print_decode_array(
-                                    w,
-                                    template,
-                                    &c.field_value,
-                                    type_index,
-                                    constant_index,
-                                    generic_index,
-                                    TypeResolve::UseAlias,
-                                    try_from,
-                                )?;
-                                writeln!(w, "),")?;
-                            }
-                        }
-
-                        // There may also be several "void" cases
-                        let mut did_void_default = false;
-                        for c in v.void_cases.iter() {
-                            let variant = c.as_str();
-                            let matcher = match variant {
-                                "default" => {
-                                    did_void_default = true;
-                                    "_"
-                                }
-                                v => constant_index.get(v).unwrap_or(c),
-                            };
+                            // Outputs:
+                            // 		match v.try_i32()? {
+                            // 			0 => None,
+                            // 			1 => Some(Box::new(TYPE::try_from(&mut *v)?)),
+                            // 			d => return Err(Error::UnknownVariant(d as i32)),
+                            // 		}
+                            writeln!(w, "{{ match v.try_u32()? {{")?;
+                            writeln!(w, "0 => None,")?;
                             writeln!(
                                 w,
-                                "{} => Self::{},",
-                                matcher,
-                                NonDigitName(SafeName(variant))
+                                "1 => Some(Box::new({}::try_from({})?)),",
+                                f.field_value.unwrap_array(),
+                                try_from
                             )?;
-                        }
-
-                        // Write a default case if present, else a catch all case that
-                        // returns an error.
-                        if let Some(ref d) = v.default {
-                            write!(w, "_ => Self::default(")?;
+                            writeln!(w, "d => return Err(Error::UnknownOptionVariant(d)),")?;
+                            writeln!(w, "}}}},")?;
+                        } else {
                             print_decode_array(
                                 w,
                                 template,
-                                &d.field_value,
-                                type_index,
-                                constant_index,
-                                generic_index,
-                                TypeResolve::UseTarget,
+                                &f.field_value,
+                                ast,
+                                // Do not resolve the typedef to the target type - instead
+                                // call try_from on the newtype itself.
+                                TypeResolve::UseAlias,
+                                try_from,
+                            )?;
+                            writeln!(w, ",")?;
+                        }
+                    }
+                    writeln!(w, "}})")?;
+                    Ok(())
+                })?
+            }
+
+            AstType::Union(v) => {
+                print_try_from(&mut w, template, v.name.as_str(), ast, |w, try_from| {
+                    write!(w, "let {} = ", SafeName(&v.switch.var_name))?;
+                    print_decode_basic_type(
+                        w,
+                        &v.switch.var_type,
+                        ast,
+                        TypeResolve::UseTarget,
+                        try_from,
+                    )?;
+                    writeln!(w, "?;")?;
+
+                    writeln!(w, "Ok(match {} {{", SafeName(&v.switch.var_name))?;
+                    for c in v.cases.iter() {
+                        // A single case statement may have many case values tied to it
+                        // if fallthrough values are used:
+                        //
+                        // 	case 1:
+                        // 	case 2:
+                        // 		// statement
+                        //
+                        for c_value in c.case_values.iter() {
+                            // The case value may be a declared constant or enum value.
+                            //
+                            // Lookup the value in the `constant_index`.
+                            let matcher = ast.constants().get(c_value.as_str()).unwrap_or(c_value);
+
+                            write!(
+                                w,
+                                "{} => Self::{}(",
+                                SafeName(matcher),
+                                NonDigitName(SafeName(&c_value))
+                            )?;
+                            print_decode_array(
+                                w,
+                                template,
+                                &c.field_value,
+                                ast,
+                                TypeResolve::UseAlias,
                                 try_from,
                             )?;
                             writeln!(w, "),")?;
-                        } else if !did_void_default {
-                            writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
                         }
+                    }
 
-                        writeln!(w, "}})")?;
+                    // There may also be several "void" cases
+                    let mut did_void_default = false;
+                    for c in v.void_cases.iter() {
+                        let variant = c.as_str();
+                        let matcher = match variant {
+                            "default" => {
+                                did_void_default = true;
+                                "_"
+                            }
+                            v => ast.constants().get(v).unwrap_or(c),
+                        };
+                        writeln!(
+                            w,
+                            "{} => Self::{},",
+                            matcher,
+                            NonDigitName(SafeName(variant))
+                        )?;
+                    }
 
-                        Ok(())
-                    },
-                )?
+                    // Write a default case if present, else a catch all case that
+                    // returns an error.
+                    if let Some(ref d) = v.default {
+                        write!(w, "_ => Self::default(")?;
+                        print_decode_array(
+                            w,
+                            template,
+                            &d.field_value,
+                            ast,
+                            TypeResolve::UseTarget,
+                            try_from,
+                        )?;
+                        writeln!(w, "),")?;
+                    } else if !did_void_default {
+                        writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),")?;
+                    }
+
+                    writeln!(w, "}})")?;
+
+                    Ok(())
+                })?
             }
 
-            AstType::Enum(v) => print_try_from(
-                &mut w,
-                template,
-                v.name.as_str(),
-                generic_index,
-                |w, _try_from| {
+            AstType::Enum(v) => {
+                print_try_from(&mut w, template, v.name.as_str(), ast, |w, _try_from| {
                     writeln!(w, "Ok(match v.try_i32()? {{")?;
                     for variant in v.variants.iter() {
                         writeln!(w, "{} => Self::{},", variant.value, variant.name)?;
                     }
                     writeln!(w, "d => return Err(Error::UnknownVariant(d as i32)),\n}})")?;
                     Ok(())
-                },
-            )?,
+                })?
+            }
 
             AstType::Typedef(v) => print_try_from(
                 &mut w,
                 template,
                 v.alias.unwrap_array().as_str(),
-                generic_index,
+                ast,
                 |w, try_from| {
                     write!(w, "Ok(Self(")?;
                     print_decode_array(
                         w,
                         template,
                         &v.alias,
-                        type_index,
-                        constant_index,
-                        generic_index,
+                        ast,
                         TypeResolve::UseTarget,
                         try_from,
                     )?;
@@ -236,10 +209,10 @@ fn print_try_from<
     mut w: W,
     template: T,
     name: &str,
-    generic_index: &GenericIndex,
+    ast: &Ast,
     func: F,
 ) -> Result<()> {
-    if generic_index.contains(name) {
+    if ast.generics().contains(name) {
         write!(
             w,
             "impl TryFrom<{}> for {}<{}>",
@@ -269,10 +242,8 @@ fn try_from(mut v: {}) -> Result<Self, Self::Error> {{"#,
 fn print_decode_array<'a, W, T: FromTemplate>(
     w: &mut W,
     template: T,
-    t: &ArrayType<BasicType<'a>>,
-    type_index: &TypeIndex<'a>,
-    constant_index: &ConstantIndex<'a>,
-    generic_index: &GenericIndex<'a>,
+    t: &ArrayType<BasicType>,
+    ast: &Ast,
     resolve_typedefs: TypeResolve,
     try_from: ReferenceType,
 ) -> Result<()>
@@ -285,7 +256,7 @@ where
 
         // If requested, resolve a typedef the type to the target type.
         if !resolve_typedefs.use_alias() {
-            if let Some(typedef) = type_index.typedef_target(t.as_str()) {
+            if let Some(typedef) = ast.types().typedef_target(t.as_str()) {
                 field = typedef.target.clone();
             }
         }
@@ -296,7 +267,7 @@ where
             _ => {
                 writeln!(w, "[")?;
                 for _i in 0..size {
-                    print_decode_basic_type(w, t, type_index, resolve_typedefs, try_from)?;
+                    print_decode_basic_type(w, t, ast, resolve_typedefs, try_from)?;
                     writeln!(w, "?,")?;
                 }
                 write!(w, "]")?;
@@ -311,13 +282,14 @@ where
 
         // If requested, resolve a typedef the type to the target type.
         if !resolve_typedefs.use_alias() {
-            type_str = type_index
+            type_str = ast
+                .types()
                 .get(&type_str)
                 .map(|t| t.to_string())
                 .unwrap_or(type_str)
         }
 
-        if generic_index.contains(type_str.as_str()) {
+        if ast.generics().contains(type_str.as_str()) {
             type_str = format!("{}<{}>", type_str, template.type_name());
         };
 
@@ -336,13 +308,14 @@ where
 
     match t {
         ArrayType::None(t) => {
-            print_decode_basic_type(w, t, type_index, resolve_typedefs, try_from)?;
+            print_decode_basic_type(w, t, ast, resolve_typedefs, try_from)?;
             write!(w, "?")?;
         }
         ArrayType::FixedSize(t, ArraySize::Known(size)) => print_fixed(w, t, *size)?,
         ArrayType::FixedSize(t, ArraySize::Constant(size)) => {
             // Try and resolve the constant value
-            let size = constant_index
+            let size = ast
+                .constants()
                 .get(size.as_str())
                 .ok_or(format!("unknown constant {}", size))?;
 
@@ -353,7 +326,8 @@ where
         }
         ArrayType::VariableSize(t, Some(ArraySize::Constant(size))) => {
             // Try and resolve the constant value
-            let size = constant_index
+            let size = ast
+                .constants()
                 .get(size.as_str())
                 .ok_or("unknown constant")?;
 
@@ -374,8 +348,8 @@ where
 /// type.
 fn print_decode_basic_type<'a, W>(
     w: &mut W,
-    t: &BasicType<'a>,
-    type_index: &TypeIndex<'a>,
+    t: &BasicType,
+    ast: &Ast,
     resolve_typedefs: TypeResolve,
     try_from: ReferenceType,
 ) -> Result<()>
@@ -400,7 +374,7 @@ where
         }
 
         // An ident may refer to a typedef, or a compound type.
-        BasicType::Ident(c) => match type_index.get(c) {
+        BasicType::Ident(c) => match ast.types().get(c) {
             Some(AstType::Struct(s)) => write!(w, "{}::try_from({})", s.name(), try_from)?,
             Some(AstType::Union(u)) => write!(w, "{}::try_from({})", u.name(), try_from)?,
             Some(AstType::Enum(e)) => write!(w, "{}::try_from({})", e.name, try_from)?,
@@ -413,16 +387,10 @@ where
             // Otherwise print the target's try_from, but only go one level down
             // the typedef chain.
             Some(AstType::Typedef(t)) => {
-                return print_decode_basic_type(
-                    w,
-                    &t.target,
-                    type_index,
-                    TypeResolve::UseAlias,
-                    try_from,
-                )
+                return print_decode_basic_type(w, &t.target, ast, TypeResolve::UseAlias, try_from)
             }
 
-            None => return Err(format!("unresolvable type {}", c.as_ref()).into()),
+            None => return Err(format!("unresolvable type {}", c).into()),
         },
     };
     Ok(())
@@ -432,28 +400,15 @@ where
 mod tests {
     use super::bytes::RefMutBytes;
     use super::*;
-    use crate::{walk, Rule, XDRParser};
-    use pest::Parser;
 
     macro_rules! test_convert {
         ($name: ident, $input: expr, $want: expr) => {
             #[test]
             fn $name() {
-                let mut ast = XDRParser::parse(Rule::item, $input).unwrap();
-                let ast = walk(ast.next().unwrap()).unwrap();
-                let constant_index = ConstantIndex::new(&ast);
-                let generic_index = GenericIndex::new(&ast);
-                let type_index = TypeIndex::new(&ast);
+                let ast = Ast::new($input).unwrap();
 
                 let mut got = String::new();
-                print_impl_from(
-                    &mut got,
-                    RefMutBytes,
-                    &generic_index,
-                    &constant_index,
-                    &type_index,
-                )
-                .unwrap();
+                print_impl_from(&mut got, RefMutBytes, &ast).unwrap();
 
                 assert_eq!(got, $want);
             }

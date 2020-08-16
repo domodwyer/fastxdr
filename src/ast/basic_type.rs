@@ -1,7 +1,5 @@
-use std::borrow::Cow;
-
 #[derive(Debug, Clone, PartialEq)]
-pub enum BasicType<'a> {
+pub enum BasicType {
     U32,
     U64,
     I32,
@@ -11,10 +9,10 @@ pub enum BasicType<'a> {
     String,
     Bool,
     Opaque,
-    Ident(Cow<'a, str>),
+    Ident(String),
 }
 
-impl<'a> BasicType<'a> {
+impl<'a> BasicType {
     pub fn as_str(&self) -> &str {
         match self {
             Self::U32 => "u32",
@@ -61,13 +59,13 @@ impl<'a> BasicType<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for BasicType<'a> {
+impl<'a> std::fmt::Display for BasicType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_safe_string())
     }
 }
 
-impl<'a> From<&'a str> for BasicType<'a> {
+impl<'a> From<&'a str> for BasicType {
     fn from(v: &'a str) -> Self {
         match v.trim() {
             "unsigned int" | "uint32_t" | "u32" => Self::U32,
@@ -79,12 +77,12 @@ impl<'a> From<&'a str> for BasicType<'a> {
             "string" => Self::String,
             "opaque" => Self::Opaque,
             "bool" => Self::Bool,
-            s => Self::Ident(Cow::from(s)),
+            s => Self::Ident(s.to_string()),
         }
     }
 }
 
-impl<'a> From<String> for BasicType<'a> {
+impl<'a> From<String> for BasicType {
     fn from(v: String) -> Self {
         match v.trim() {
             "unsigned int" | "uint32_t" | "u32" => Self::U32,
@@ -96,7 +94,7 @@ impl<'a> From<String> for BasicType<'a> {
             "string" => Self::String,
             "opaque" => Self::Opaque,
             "bool" => Self::Bool,
-            s => Self::Ident(Cow::from(s.to_string())),
+            s => Self::Ident(s.to_string()),
         }
     }
 }
