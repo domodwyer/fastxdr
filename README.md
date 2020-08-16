@@ -2,7 +2,7 @@
 
 Transpiles XDR specifications into Rust code.
 
-* Generates XDR types with fast, zero-copy deserialisation
+* Generates Rust types with fast, zero-copy deserialisation
 * Customisable derives for generated types
 * No panicking - returns generated `Error` variants for malformed data
 * Use as part of a [`build.rs`] or generate with a standalone binary
@@ -23,17 +23,8 @@ typical size and complexity for the protocol:
 
 ```
 setclientid             time:   [719.93 ns 724.15 ns 728.76 ns]
-Found 4 outliers among 100 measurements (4.00%)
-  4 (4.00%) high mild
-
 mount                   time:   [661.15 ns 663.54 ns 665.85 ns]
-Found 4 outliers among 100 measurements (4.00%)
-  3 (3.00%) high mild
-  1 (1.00%) high severe
-
 lookup                  time:   [819.69 ns 823.80 ns 828.04 ns]
-Found 3 outliers among 100 measurements (3.00%)
-  3 (3.00%) high mild
 ```
 
 By avoiding the need to copy opaque bytes entirely, even XDR messages containing
