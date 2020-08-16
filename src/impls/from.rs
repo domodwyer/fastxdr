@@ -3,7 +3,7 @@ use crate::ast::{indexes::*, ArraySize, ArrayType, Ast, BasicType};
 use crate::impls::template::*;
 use crate::Result;
 
-/// TypeResolve controls how callees should handle XDR type aliases.
+/// `TypeResolve` controls how callees should handle XDR type aliases.
 ///
 /// `None` instructs the callee to use the type alias directly, while
 /// `UseTarget` instructs the callee to use the target type the alias
@@ -23,7 +23,7 @@ impl TypeResolve {
     }
 }
 
-pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
+pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
     mut w: W,
     template: T,
     ast: &Ast,
@@ -196,7 +196,7 @@ pub fn print_impl_from<'a, W: std::fmt::Write, T: FromTemplate>(
     Ok(())
 }
 
-/// Prints the "impl TryFrom" block around the output of func.
+/// Prints the `impl TryFrom` block around the output of func.
 ///
 /// `func` should write the body of the `try_from` implementation to `w`, using
 /// `v` as the Bytes source.
@@ -238,7 +238,7 @@ fn try_from(mut v: {}) -> Result<Self, Self::Error> {{"#,
     Ok(())
 }
 
-fn print_decode_array<'a, W, T: FromTemplate>(
+fn print_decode_array<W, T: FromTemplate>(
     w: &mut W,
     template: T,
     t: &ArrayType<BasicType>,
@@ -345,7 +345,7 @@ where
 ///
 /// If `t` is a typedef alias, the typedef chain is resolved to the underlying
 /// type.
-fn print_decode_basic_type<'a, W>(
+fn print_decode_basic_type<W>(
     w: &mut W,
     t: &BasicType,
     ast: &Ast,

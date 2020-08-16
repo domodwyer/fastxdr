@@ -1,6 +1,7 @@
 use crate::ast::Node;
 use std::collections::BTreeMap;
 
+#[derive(Debug)]
 pub struct ConstantIndex(pub BTreeMap<String, String>);
 
 impl ConstantIndex {

@@ -3,6 +3,19 @@ repos:
     rev: v3.0.0
     hooks:
       - id: rust-clippy
+        args: [
+          "-D rust_2018_idioms",
+          "-D missing_debug_implementations",
+          "-D unreachable_pub",
+          "-D clippy::doc_markdown",
+          "-D clippy::todo",
+          "-D clippy::dbg_macro",
+          "-D clippy::unimplemented",
+          # Allow the following:
+          "-A missing_docs",
+          "-A clippy::missing_docs_in_private_items",
+          "-A clippy::indexing_slicing" 
+        ]
         stages: [commit, push]
       
       - id: rust-test

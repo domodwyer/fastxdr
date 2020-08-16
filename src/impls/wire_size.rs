@@ -3,7 +3,7 @@ use crate::ast::{indexes::AstType, Ast, BasicType};
 use crate::impls::template::*;
 use crate::Result;
 
-pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(
+pub fn print_impl_wire_size<W: std::fmt::Write, T: FromTemplate>(
     mut w: W,
     template: T,
     ast: &Ast,

@@ -7,7 +7,7 @@ pub struct Typedef {
 }
 
 impl Typedef {
-    pub(crate) fn new<'a>(mut vs: Vec<Node<'a>>) -> Self {
+    pub(crate) fn new(mut vs: Vec<Node<'_>>) -> Self {
         // Extract the target type
         let target = match vs.remove(0) {
             Node::Type(t) => t,

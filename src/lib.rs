@@ -51,10 +51,16 @@ pub mod impls;
 use crate::impls::{print_impl_from, print_impl_wire_size, print_types, template};
 use std::fmt::Write;
 
+/// `DEFAULT_DERIVE` defines the default "derive" line prepended to type
+/// declarations.
+///
+/// Custom "derive" lines can be used when generating Rust types with
+/// [`Generator::with_derive()`](Generator::with_derive).
 pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq)]";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + 'static>>;
 
+#[derive(Debug)]
 pub struct Generator {
     derive: String,
 }
