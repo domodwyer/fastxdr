@@ -11,7 +11,7 @@ mod enumeration;
 pub use enumeration::*;
 
 mod node;
-pub use node::*;
+use node::*;
 
 mod array;
 pub use array::*;
@@ -19,12 +19,14 @@ pub use array::*;
 mod typedef;
 pub use typedef::*;
 
+pub mod indexes;
+use indexes::*;
+
 pub trait CompoundType {
     fn inner_types(&self) -> Vec<&ArrayType<BasicType>>;
     fn contains_opaque(&self) -> bool;
 }
 
-use crate::indexes::*;
 use crate::Result;
 use pest::iterators::Pair;
 use pest::Parser;
@@ -41,12 +43,14 @@ pub struct Ast {
     type_index: TypeIndex,
 }
 
+/// The `Ast` type provides high-level access to elements of the AST read from
+/// an XDR spec.
 impl Ast {
     pub fn new<'s>(xdr: &'s str) -> Result<Self> {
         // Tokenise the input
         let mut root = XDRParser::parse(Rule::item, xdr)?;
         // Parse into an AST
-        let ast = walk(root.next().unwrap())?;
+        let ast = walk(root.next().ok_or("unable to tokenise input")?);
 
         // Build some helpful indexes to answer questions about types when
         // generating the Rust code.
@@ -74,14 +78,17 @@ impl Ast {
     }
 }
 
-pub(crate) fn walk(
-    ast: Pair<Rule>,
-) -> std::result::Result<Node, Box<dyn std::error::Error + 'static>> {
+// Recurse into the tokens from the PEG parser, constructing a syntax tree and
+// initialising higher-level representations of the compound types from them.
+//
+// These higher-level types will then be extracted and added to the type index
+// later.
+fn walk(ast: Pair<Rule>) -> Node {
     fn collect_values(ast: Pair<Rule>) -> Vec<Node> {
-        ast.into_inner().map(|v| walk(v).unwrap()).collect()
+        ast.into_inner().map(|v| walk(v)).collect()
     }
 
-    let x = match ast.as_rule() {
+    match ast.as_rule() {
         Rule::item => Node::Root(collect_values(ast)),
         Rule::typedef => Node::Typedef(Typedef::new(collect_values(ast))),
         Rule::constant => Node::Constant(collect_values(ast)),
@@ -109,8 +116,6 @@ pub(crate) fn walk(
             Node::Type(BasicType::try_from(ast.as_str()).expect("unrecognised type"))
         }
         Rule::EOI => Node::EOF,
-        e => unimplemented!("{:?}", e),
-    };
-
-    Ok(x)
+        e => unimplemented!("unknown token type {:?}", e),
+    }
 }

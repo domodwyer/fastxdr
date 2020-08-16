@@ -1,7 +1,6 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::{Ast, BasicType};
+use crate::ast::{indexes::AstType, Ast, BasicType};
 use crate::impls::template::*;
-use crate::indexes::AstType;
 use crate::Result;
 
 pub fn print_impl_wire_size<'a, W: std::fmt::Write, T: FromTemplate>(

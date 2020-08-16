@@ -170,7 +170,7 @@ mod tests {
                 .next()
                 .unwrap();
 
-            let root = walk(ast).unwrap();
+            let root = walk(ast);
             let union = root.into_inner().remove(0);
             match union {
                 Node::Union(u) => u,
