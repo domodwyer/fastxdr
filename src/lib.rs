@@ -47,7 +47,6 @@
 
 pub mod ast;
 pub mod impls;
-pub mod indexes;
 
 use crate::impls::{print_impl_from, print_impl_wire_size, print_types, template};
 use std::fmt::Write;

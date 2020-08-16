@@ -1,6 +1,5 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::{ArrayType, Ast, BasicType};
-use crate::indexes::*;
+use crate::ast::{indexes::*, ArrayType, Ast, BasicType};
 use crate::Result;
 
 // TODO: set lints + docs

@@ -543,3 +543,4 @@ mod xdr {
             assert_eq!(buf.remaining(), 0);
         }
     }
+}

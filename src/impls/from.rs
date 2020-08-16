@@ -1,7 +1,6 @@
 use super::{NonDigitName, SafeName};
-use crate::ast::{ArraySize, ArrayType, Ast, BasicType};
+use crate::ast::{indexes::*, ArraySize, ArrayType, Ast, BasicType};
 use crate::impls::template::*;
-use crate::indexes::*;
 use crate::Result;
 
 /// TypeResolve controls how callees should handle XDR type aliases.
