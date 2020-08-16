@@ -33,7 +33,7 @@ mod xdr {
     }
 
     pub trait DeserialiserExt {
-        type Sliced: WireSize;
+        type Sliced: WireSize + IntoIterator<Item = u8>;
         type TryFrom;
 
         fn try_u32(&mut self) -> Result<u32, Error>;
@@ -43,12 +43,33 @@ mod xdr {
         fn try_f32(&mut self) -> Result<f32, Error>;
         fn try_f64(&mut self) -> Result<f64, Error>;
         fn try_bool(&mut self) -> Result<bool, Error>;
-        fn try_string(&mut self, max: Option<usize>) -> Result<String, Error>;
-        fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error>;
         fn try_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error>;
         fn try_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
         where
             T: TryFrom<Self::TryFrom, Error = Error> + WireSize;
+
+        /// Try to read an opaque XDR array, prefixed by a length u32 and padded
+        /// modulo 4.
+        fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
+            let n = self.try_u32()? as usize;
+
+            if let Some(limit) = max {
+                if n > limit {
+                    return Err(Error::InvalidLength);
+                }
+            }
+
+            self.try_bytes(n)
+        }
+
+        /// Reads a variable length UTF8-compatible string from the buffer.
+        fn try_string(&mut self, max: Option<usize>) -> Result<String, Error> {
+            let b = self
+                .try_variable_bytes(max)?
+                .into_iter()
+                .collect::<Vec<u8>>();
+            String::from_utf8(b).map_err(|e| e.into())
+        }
     }
 
     impl DeserialiserExt for Bytes {
@@ -107,29 +128,6 @@ mod xdr {
                 1 => Ok(false),
                 _ => Err(Error::InvalidBoolean),
             }
-        }
-
-        fn try_string(&mut self, max: Option<usize>) -> Result<String, Error> {
-            let b = self
-                .try_variable_bytes(max)?
-                .iter()
-                .copied()
-                .collect::<Vec<u8>>();
-            String::from_utf8(b).map_err(|e| e.into())
-        }
-
-        /// Try to read an opaque XDR array, prefixed by a length u32 and padded
-        /// modulo 4.
-        fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
-            let n = self.try_u32()? as usize;
-
-            if let Some(limit) = max {
-                if n > limit {
-                    return Err(Error::InvalidLength);
-                }
-            }
-
-            self.try_bytes(n)
         }
 
         /// Try to read an opaque XDR array with a fixed length and padded modulo 4.
