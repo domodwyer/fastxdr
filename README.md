@@ -22,9 +22,14 @@ The examples below are NFS messages captured from a production network, of
 typical size and complexity for the protocol:
 
 ```
-setclientid             time:   [719.93 ns 724.15 ns 728.76 ns]
-mount                   time:   [661.15 ns 663.54 ns 665.85 ns]
-lookup                  time:   [819.69 ns 823.80 ns 828.04 ns]
+setclientid/decode      time:   [520.50 ns 523.42 ns 526.61 ns]
+                        thrpt:  [289.75 MiB/s 291.52 MiB/s 293.15 MiB/s]
+
+mount/decode            time:   [448.00 ns 449.95 ns 451.89 ns]
+                        thrpt:  [126.62 MiB/s 127.17 MiB/s 127.72 MiB/s]
+
+lookup/decode           time:   [597.41 ns 599.71 ns 602.19 ns]
+                        thrpt:  [228.05 MiB/s 228.99 MiB/s 229.88 MiB/s]
 ```
 
 By avoiding the need to copy opaque bytes entirely, even XDR messages containing
