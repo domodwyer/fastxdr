@@ -95,19 +95,32 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
                         // 		// statement
                         //
                         for c_value in c.case_values.iter() {
-                            // The case value may be a declared constant or enum value.
+                            // The case value may be a declared constant or enum
+                            // value.
                             //
-                            // Lookup the value in the `constant_index`.
+                            // Enum values are i32, which may not be the same as
+                            // the type of the variable this code is matching
+                            // on, so write enums in a longer form to allow a
+                            // primitive cast.
                             let matcher = ast
                                 .constants()
                                 .get(c_value.as_str())
-                                .map(|v| v.to_string())
-                                .unwrap_or_else(|| c_value.to_string());
+                                .map(|c| match *c {
+                                    ConstantType::ConstValue(ref v) => SafeName(v).to_string(),
+                                    ConstantType::EnumValue {
+                                        ref enum_name,
+                                        ref variant,
+                                    } => format!(
+                                        "c if c == {}::{} as {}",
+                                        enum_name, variant, v.switch.var_type,
+                                    ),
+                                })
+                                .unwrap_or_else(|| SafeName(c_value).to_string());
 
                             write!(
                                 w,
                                 "{} => Self::{}(",
-                                SafeName(matcher),
+                                matcher,
                                 NonDigitName(SafeName(&c_value))
                             )?;
                             print_decode_array(
@@ -131,11 +144,20 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
                                 did_void_default = true;
                                 "_".to_string()
                             }
-                            v => ast
+                            other => ast
                                 .constants()
-                                .get(v)
-                                .map(|v| v.to_string())
-                                .unwrap_or_else(|| c.to_string()),
+                                .get(other)
+                                .map(|c| match *c {
+                                    ConstantType::ConstValue(ref v) => SafeName(v).to_string(),
+                                    ConstantType::EnumValue {
+                                        ref enum_name,
+                                        ref variant,
+                                    } => format!(
+                                        "c if c == {}::{} as {}",
+                                        enum_name, variant, v.switch.var_type,
+                                    ),
+                                })
+                                .unwrap_or_else(|| other.to_string()),
                         };
                         writeln!(
                             w,
@@ -938,8 +960,8 @@ type Error = Error;
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let status = v.try_u32()?;
 Ok(match status {
-Status::MODE4_SUID => Self::MODE4_SUID(v.try_u32()?),
-Status::MODE4_OTHER => Self::MODE4_OTHER,
+c if c == Status::MODE4_SUID as u32 => Self::MODE4_SUID(v.try_u32()?),
+c if c == Status::MODE4_OTHER as u32 => Self::MODE4_OTHER,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1688,7 +1710,7 @@ type Error = Error;
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let set_it = time_how4::try_from(&mut *v)?;
 Ok(match set_it {
-time_how4::SET_TO_CLIENT_TIME4 => Self::SET_TO_CLIENT_TIME4(v.try_u32()?),
+c if c == time_how4::SET_TO_CLIENT_TIME4 as time_how4 => Self::SET_TO_CLIENT_TIME4(v.try_u32()?),
 _ => Self::default,
 })
 }
@@ -2572,8 +2594,12 @@ Ok(Self(v.try_variable_bytes(None)?))
 "#
     );
 
+    // Note: this will not compile as TryFrom is not (and cannot) be implemented
+    // for u32.
+    //
+    // This test simply asserts the generated output.
     test_convert!(
-        test_typedef_bitmap4,
+        test_typedef_array_primitive_types,
         r#"
             typedef uint32_t        bitmap4<>;
 		"#,
@@ -2588,7 +2614,7 @@ Ok(Self(v.try_variable_array::<u32>(None)?))
     );
 
     test_convert!(
-        test_typedef_verifier4,
+        test_typedef_fixed_array_opaque,
         r#"
             const NFS4_VERIFIER_SIZE        = 8;
             typedef opaque  verifier4[NFS4_VERIFIER_SIZE];
@@ -2598,6 +2624,100 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(Self(v.try_bytes(8)?))
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_enum_const_string,
+        r#"
+            const CONST_ONE = 1;
+            const CONST_TWO = 2;
+            const CONST_THREE = 3;
+            enum thing {
+                ONE      = CONST_ONE,
+                TWO      = CONST_TWO,
+                THREE    = CONST_THREE
+            };
+		"#,
+        r#"impl TryFrom<&mut Bytes> for thing {
+type Error = Error;
+
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(match v.try_i32()? {
+CONST_ONE => Self::ONE,
+CONST_TWO => Self::TWO,
+CONST_THREE => Self::THREE,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_const_string,
+        r#"
+            const CONST_ONE = 1;
+            const CONST_TWO = 2;
+            union u_type_name switch (unsigned int s) {
+                case CONST_ONE:    u32 some_var;
+                case CONST_TWO:    u32 some_var2;
+            };
+		"#,
+        r#"impl TryFrom<&mut Bytes> for u_type_name {
+type Error = Error;
+
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+1 => Self::CONST_ONE(v.try_u32()?),
+2 => Self::CONST_TWO(v.try_u32()?),
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+"#
+    );
+
+    test_convert!(
+        test_union_const_enum,
+        r#"
+            enum thing {
+                ONE      = 1,
+                TWO      = 2,
+                THREE    = 3
+            };
+            union u_type_name switch (unsigned int s) {
+                case ONE:    u32 some_var;
+                case TWO:    u32 some_var2;
+                case THREE:  void;
+            };
+		"#,
+        r#"impl TryFrom<&mut Bytes> for thing {
+type Error = Error;
+
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+Ok(match v.try_i32()? {
+1 => Self::ONE,
+2 => Self::TWO,
+3 => Self::THREE,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
+}
+}
+impl TryFrom<&mut Bytes> for u_type_name {
+type Error = Error;
+
+fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
+let s = v.try_u32()?;
+Ok(match s {
+c if c == thing::ONE as u32 => Self::ONE(v.try_u32()?),
+c if c == thing::TWO as u32 => Self::TWO(v.try_u32()?),
+c if c == thing::THREE as u32 => Self::THREE,
+d => return Err(Error::UnknownVariant(d as i32)),
+})
 }
 }
 "#
