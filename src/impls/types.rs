@@ -6,8 +6,9 @@ const TRAIT_BOUNDS: &str = "<T> where T: AsRef<[u8]> + Debug";
 
 pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Result<()> {
     for item in ast.constants().iter() {
-        if !item.1.contains("::") {
-            writeln!(w, "pub const {}: u32 = {};", item.0, item.1)?;
+        match item.1 {
+            ConstantType::EnumValue { .. } => continue,
+            ConstantType::ConstValue(s) => writeln!(w, "pub const {}: u32 = {};", item.0, s)?,
         }
     }
 

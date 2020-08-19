@@ -2,7 +2,22 @@ use crate::ast::Node;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
-pub struct ConstantIndex(pub BTreeMap<String, String>);
+pub enum ConstantType {
+    ConstValue(String),
+    EnumValue { enum_name: String, variant: String },
+}
+
+impl std::fmt::Display for ConstantType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ConstValue(s) => write!(f, "{}", s),
+            Self::EnumValue { enum_name, variant } => write!(f, "{}::{}", enum_name, variant),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ConstantIndex(pub BTreeMap<String, ConstantType>);
 
 impl ConstantIndex {
     /// Build an index of all consts / enums for use in the union switches.
@@ -14,7 +29,10 @@ impl ConstantIndex {
                     Node::Constant(vs) => {
                         // Map constants to themselves, they do not require namespacing.
                         if case_values
-                            .insert(vs[0].ident_str().to_string(), vs[1].ident_str().to_string())
+                            .insert(
+                                vs[0].ident_str().to_string(),
+                                ConstantType::ConstValue(vs[1].ident_str().to_string()),
+                            )
                             .is_some()
                         {
                             panic!("duplicate case keys {}", vs[0].ident_str());
@@ -29,7 +47,10 @@ impl ConstantIndex {
                             if case_values
                                 .insert(
                                     v.name.as_str().to_string(),
-                                    format!("{}::{}", e.name, v.name.as_str()),
+                                    ConstantType::EnumValue {
+                                        enum_name: e.name.to_string(),
+                                        variant: v.name.as_str().to_string(),
+                                    },
                                 )
                                 .is_some()
                             {
@@ -46,12 +67,12 @@ impl ConstantIndex {
     }
 
     /// Returns the constant value as a string for `name`.
-    pub fn get<T: AsRef<str>>(&self, name: T) -> Option<&String> {
+    pub fn get<T: AsRef<str>>(&self, name: T) -> Option<&ConstantType> {
         self.0.get(name.as_ref())
     }
 
     /// Iterates over the types in the constant index.
-    pub fn iter(&self) -> impl std::iter::Iterator<Item = (&String, &String)> {
+    pub fn iter(&self) -> impl std::iter::Iterator<Item = (&String, &ConstantType)> {
         self.0.iter()
     }
 }

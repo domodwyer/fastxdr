@@ -98,7 +98,11 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
                             // The case value may be a declared constant or enum value.
                             //
                             // Lookup the value in the `constant_index`.
-                            let matcher = ast.constants().get(c_value.as_str()).unwrap_or(c_value);
+                            let matcher = ast
+                                .constants()
+                                .get(c_value.as_str())
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| c_value.to_string());
 
                             write!(
                                 w,
@@ -125,9 +129,13 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
                         let matcher = match variant {
                             "default" => {
                                 did_void_default = true;
-                                "_"
+                                "_".to_string()
                             }
-                            v => ast.constants().get(v).unwrap_or(c),
+                            v => ast
+                                .constants()
+                                .get(v)
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| c.to_string()),
                         };
                         writeln!(
                             w,
@@ -316,6 +324,7 @@ where
             let size = ast
                 .constants()
                 .get(size.as_str())
+                .map(|v| v.to_string())
                 .ok_or(format!("unknown constant {}", size))?;
 
             print_fixed(w, t, size.parse()?)?
@@ -328,6 +337,7 @@ where
             let size = ast
                 .constants()
                 .get(size.as_str())
+                .map(|v| v.to_string())
                 .ok_or("unknown constant")?;
 
             print_variable(w, t, Some(size.parse()?))?;
