@@ -37,6 +37,8 @@ use std::convert::TryFrom;
 #[grammar = "xdr.pest"]
 pub(crate) struct XDRParser;
 
+/// The `Ast` type provides high-level access to elements of the AST read from
+/// an XDR spec.
 #[derive(Debug)]
 pub struct Ast {
     constant_index: ConstantIndex,
@@ -44,8 +46,6 @@ pub struct Ast {
     type_index: TypeIndex,
 }
 
-/// The `Ast` type provides high-level access to elements of the AST read from
-/// an XDR spec.
 impl Ast {
     pub fn new(xdr: &str) -> Result<Self> {
         // Tokenise the input
