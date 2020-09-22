@@ -39,12 +39,12 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
                             // This field is an optional field
                             //
                             // Outputs:
-                            // 		match v.try_i32()? {
+                            // 		match v.read_i32()? {
                             // 			0 => None,
                             // 			1 => Some(Box::new(TYPE::try_from(&mut *v)?)),
                             // 			d => return Err(Error::UnknownVariant(d as i32)),
                             // 		}
-                            writeln!(w, "{{ match v.try_u32()? {{")?;
+                            writeln!(w, "{{ match v.read_u32()? {{")?;
                             writeln!(w, "0 => None,")?;
                             writeln!(
                                 w,
@@ -192,7 +192,7 @@ pub fn print_impl_from<W: std::fmt::Write, T: FromTemplate>(
 
             AstType::Enum(v) => {
                 print_try_from(&mut w, template, v.name.as_str(), ast, |w, _try_from| {
-                    writeln!(w, "Ok(match v.try_i32()? {{")?;
+                    writeln!(w, "Ok(match v.read_i32()? {{")?;
                     for variant in v.variants.iter() {
                         writeln!(w, "{} => Self::{},", variant.value, variant.name)?;
                     }
@@ -291,7 +291,7 @@ where
         }
 
         match field {
-            BasicType::Opaque => write!(w, "v.try_bytes({})?", size)?,
+            BasicType::Opaque => write!(w, "v.read_bytes({})?", size)?,
             BasicType::String => unreachable!("unexpected fixed length string"),
             _ => {
                 writeln!(w, "[")?;
@@ -327,9 +327,9 @@ where
             .unwrap_or_else(|| "None".to_string());
 
         match t {
-            BasicType::Opaque => write!(w, "v.try_variable_bytes({})?", size)?,
-            BasicType::String => write!(w, "v.try_string({})?", size)?,
-            _ => write!(w, "v.try_variable_array::<{}>({})?", type_str, size)?,
+            BasicType::Opaque => write!(w, "v.read_variable_bytes({})?", size)?,
+            BasicType::String => write!(w, "v.read_string({})?", size)?,
+            _ => write!(w, "v.read_variable_array::<{}>({})?", type_str, size)?,
         };
 
         Ok(())
@@ -388,15 +388,15 @@ where
     W: std::fmt::Write,
 {
     match t {
-        BasicType::U32 => write!(w, "v.try_u32()")?,
-        BasicType::U64 => write!(w, "v.try_u64()")?,
-        BasicType::I32 => write!(w, "v.try_i32()")?,
-        BasicType::I64 => write!(w, "v.try_i64()")?,
-        BasicType::F32 => write!(w, "v.try_f32()")?,
-        BasicType::F64 => write!(w, "v.try_f64()")?,
-        BasicType::Bool => write!(w, "v.try_bool()")?,
-        BasicType::String => write!(w, "v.try_string(None)")?,
-        BasicType::Opaque => write!(w, "v.try_variable_bytes(None)")?,
+        BasicType::U32 => write!(w, "v.read_u32()")?,
+        BasicType::U64 => write!(w, "v.read_u64()")?,
+        BasicType::I32 => write!(w, "v.read_i32()")?,
+        BasicType::I64 => write!(w, "v.read_i64()")?,
+        BasicType::F32 => write!(w, "v.read_f32()")?,
+        BasicType::F64 => write!(w, "v.read_f64()")?,
+        BasicType::Bool => write!(w, "v.read_bool()")?,
+        BasicType::String => write!(w, "v.read_string(None)")?,
+        BasicType::Opaque => write!(w, "v.read_variable_bytes(None)")?,
 
         // If typedefs should not be resolved to their targets (for struct
         // fields) just print a try_from() impl for the ident name.
@@ -466,15 +466,15 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_u32()?,
-b: v.try_u64()?,
-c: v.try_i32()?,
-d: v.try_i64()?,
-e: v.try_f32()?,
-f: v.try_f64()?,
-g: v.try_string(None)?,
-h: v.try_bool()?,
-i: v.try_variable_bytes(None)?,
+a: v.read_u32()?,
+b: v.read_u64()?,
+c: v.read_i32()?,
+d: v.read_i64()?,
+e: v.read_f32()?,
+f: v.read_f64()?,
+g: v.read_string(None)?,
+h: v.read_bool()?,
+i: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -499,12 +499,12 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_bytes(None)?,
-b: v.try_variable_bytes(None)?,
-c: v.try_variable_bytes(Some(42))?,
-c_c: v.try_variable_bytes(Some(3))?,
-d: v.try_bytes(2)?,
-d_c: v.try_bytes(3)?,
+a: v.read_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
+c: v.read_variable_bytes(Some(42))?,
+c_c: v.read_variable_bytes(Some(3))?,
+d: v.read_bytes(2)?,
+d_c: v.read_bytes(3)?,
 })
 }
 }
@@ -525,9 +525,9 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_string(None)?,
-b: v.try_string(None)?,
-c: v.try_string(Some(42))?,
+a: v.read_string(None)?,
+b: v.read_string(None)?,
+c: v.read_string(Some(42))?,
 })
 }
 }
@@ -549,7 +549,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -558,7 +558,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: { match v.try_u32()? {
+a: { match v.read_u32()? {
 0 => None,
 1 => Some(Box::new(other::try_from(&mut *v)?)),
 d => return Err(Error::UnknownOptionVariant(d)),
@@ -581,7 +581,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: { match v.try_u32()? {
+a: { match v.read_u32()? {
 0 => None,
 1 => Some(Box::new(small::try_from(&mut *v)?)),
 d => return Err(Error::UnknownOptionVariant(d)),
@@ -604,7 +604,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-type_v: v.try_u32()?,
+type_v: v.read_u32()?,
 })
 }
 }
@@ -626,7 +626,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -657,7 +657,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -696,7 +696,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -735,7 +735,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -763,7 +763,7 @@ a: alias::try_from(&mut *v)?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 impl TryFrom<&mut Bytes> for small {
@@ -790,7 +790,7 @@ a: alias::try_from(&mut *v)?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 impl TryFrom<&mut Bytes> for small<Bytes> {
@@ -828,9 +828,9 @@ impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -870,9 +870,9 @@ impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -903,10 +903,10 @@ a: alias::try_from(&mut *v)?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
-2 => Self::v_2(v.try_u64()?),
+1 => Self::v_1(v.read_u32()?),
+2 => Self::v_2(v.read_u64()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -929,10 +929,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-0x800 => Self::MODE4_SUID(v.try_u32()?),
-2 => Self::v_2(v.try_u64()?),
+0x800 => Self::MODE4_SUID(v.read_u32()?),
+2 => Self::v_2(v.read_u64()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -958,9 +958,9 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-c if c == Status::MODE4_SUID as u32 => Self::MODE4_SUID(v.try_u32()?),
+c if c == Status::MODE4_SUID as u32 => Self::MODE4_SUID(v.read_u32()?),
 c if c == Status::MODE4_OTHER as u32 => Self::MODE4_OTHER,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -970,7 +970,7 @@ impl TryFrom<&mut Bytes> for Status {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 1 => Self::MODE4_SUID,
 2 => Self::MODE4_OTHER,
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -994,10 +994,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
-2 => Self::v_2(v.try_u64()?),
+1 => Self::v_1(v.read_u32()?),
+2 => Self::v_2(v.read_u64()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1020,11 +1020,11 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
-2 => Self::v_2(v.try_u64()?),
-3 => Self::v_3(v.try_u64()?),
+1 => Self::v_1(v.read_u32()?),
+2 => Self::v_2(v.read_u64()?),
+3 => Self::v_3(v.read_u64()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1046,10 +1046,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
-_ => Self::default(v.try_u64()?),
+1 => Self::v_1(v.read_u32()?),
+_ => Self::default(v.read_u64()?),
 })
 }
 }
@@ -1071,10 +1071,10 @@ _ => Self::default(v.try_u64()?),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
-_ => Self::default(v.try_u64()?),
+1 => Self::v_1(v.read_u32()?),
+_ => Self::default(v.read_u64()?),
 })
 }
 }
@@ -1097,9 +1097,9 @@ _ => Self::default(v.try_u64()?),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 _ => Self::default,
 })
 }
@@ -1124,9 +1124,9 @@ _ => Self::default,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 _ => Self::default,
 })
@@ -1149,9 +1149,9 @@ _ => Self::default,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -1175,9 +1175,9 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 3 => Self::v_3,
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -1204,7 +1204,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(simple::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1217,7 +1217,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(simple {
-a: v.try_u32()?,
+a: v.read_u32()?,
 })
 }
 }
@@ -1242,7 +1242,7 @@ a: v.try_u32()?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(my_union::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1254,9 +1254,9 @@ impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1278,10 +1278,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_bool()?;
+let status = v.read_bool()?;
 Ok(match status {
-true => Self::TRUE(v.try_u64()?),
-false => Self::FALSE(v.try_u64()?),
+true => Self::TRUE(v.read_u64()?),
+false => Self::FALSE(v.read_u64()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1307,7 +1307,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(my_union::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1319,9 +1319,9 @@ impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1348,7 +1348,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1367,9 +1367,9 @@ impl TryFrom<&mut Bytes> for my_union {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1396,7 +1396,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1415,9 +1415,9 @@ impl TryFrom<&mut Bytes> for my_union<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -1443,7 +1443,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1463,7 +1463,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_u32()?,
+a: v.read_u32()?,
 })
 }
 }
@@ -1488,7 +1488,7 @@ a: v.try_u32()?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1508,7 +1508,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_bytes(None)?,
+a: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -1530,7 +1530,7 @@ a: v.try_variable_bytes(None)?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1542,7 +1542,7 @@ impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 "#
@@ -1563,7 +1563,7 @@ Ok(Self(v.try_u32()?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 2 => Self::v_2,
@@ -1575,7 +1575,7 @@ impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 "#
@@ -1595,9 +1595,9 @@ Ok(Self(v.try_variable_bytes(None)?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -1620,9 +1620,9 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 2 => Self::v_2,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -1646,9 +1646,9 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let status = v.try_u32()?;
+let status = v.read_u32()?;
 Ok(match status {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -1658,7 +1658,7 @@ impl TryFrom<&mut Bytes> for alias {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 "#
@@ -1678,9 +1678,9 @@ Ok(Self(v.try_u32()?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let type_v = v.try_u32()?;
+let type_v = v.read_u32()?;
 Ok(match type_v {
-1 => Self::v_1(v.try_u32()?),
+1 => Self::v_1(v.read_u32()?),
 2 => Self::v_2,
 d => return Err(Error::UnknownVariant(d as i32)),
 })
@@ -1710,7 +1710,7 @@ type Error = Error;
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 let set_it = time_how4::try_from(&mut *v)?;
 Ok(match set_it {
-c if c == time_how4::SET_TO_CLIENT_TIME4 as time_how4 => Self::SET_TO_CLIENT_TIME4(v.try_u32()?),
+c if c == time_how4::SET_TO_CLIENT_TIME4 as time_how4 => Self::SET_TO_CLIENT_TIME4(v.read_u32()?),
 _ => Self::default,
 })
 }
@@ -1719,7 +1719,7 @@ impl TryFrom<&mut Bytes> for time_how4 {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 0 => Self::SET_TO_SERVER_TIME4,
 1 => Self::SET_TO_CLIENT_TIME4,
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -1742,9 +1742,9 @@ type Error = Error;
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-v.try_u32()?,
-v.try_u32()?,
-v.try_u32()?,
+v.read_u32()?,
+v.read_u32()?,
+v.read_u32()?,
 ],
 })
 }
@@ -1767,7 +1767,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -1800,8 +1800,8 @@ type Error = Error;
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
 a: [
-v.try_u32()?,
-v.try_u32()?,
+v.read_u32()?,
+v.read_u32()?,
 ],
 })
 }
@@ -1825,7 +1825,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -1856,7 +1856,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<u32>(None)?,
+a: v.read_variable_array::<u32>(None)?,
 })
 }
 }
@@ -1878,7 +1878,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -1887,7 +1887,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<other>(None)?,
+a: v.read_variable_array::<other>(None)?,
 })
 }
 }
@@ -1906,7 +1906,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<u32>(Some(42))?,
+a: v.read_variable_array::<u32>(Some(42))?,
 })
 }
 }
@@ -1928,7 +1928,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -1937,7 +1937,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<other>(Some(42))?,
+a: v.read_variable_array::<other>(Some(42))?,
 })
 }
 }
@@ -1957,7 +1957,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<u32>(Some(42))?,
+a: v.read_variable_array::<u32>(Some(42))?,
 })
 }
 }
@@ -1980,7 +1980,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_u32()?,
+b: v.read_u32()?,
 })
 }
 }
@@ -1989,7 +1989,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<other>(Some(42))?,
+a: v.read_variable_array::<other>(Some(42))?,
 })
 }
 }
@@ -2011,7 +2011,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -2046,7 +2046,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -2080,7 +2080,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -2089,7 +2089,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<other<Bytes>>(Some(42))?,
+a: v.read_variable_array::<other<Bytes>>(Some(42))?,
 })
 }
 }
@@ -2112,7 +2112,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(other {
-b: v.try_variable_bytes(None)?,
+b: v.read_variable_bytes(None)?,
 })
 }
 }
@@ -2121,7 +2121,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(small {
-a: v.try_variable_array::<other<Bytes>>(Some(42))?,
+a: v.read_variable_array::<other<Bytes>>(Some(42))?,
 })
 }
 }
@@ -2153,7 +2153,7 @@ impl TryFrom<&mut Bytes> for a_status {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 0 => Self::ZERO,
 1 => Self::ONE,
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -2189,7 +2189,7 @@ impl TryFrom<&mut Bytes> for a_status {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 0 => Self::ZERO,
 1 => Self::ONE,
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -2233,14 +2233,14 @@ impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -2266,7 +2266,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
-resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
+resarray: v.read_variable_array::<u_type_name<Bytes>>(Some(42))?,
 })
 }
 }
@@ -2274,14 +2274,14 @@ impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -2307,7 +2307,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
-resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
+resarray: v.read_variable_array::<u_type_name<Bytes>>(None)?,
 })
 }
 }
@@ -2315,14 +2315,14 @@ impl TryFrom<&mut Bytes> for alias<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
 1 => Self::v_1(alias::try_from(&mut *v)?),
 d => return Err(Error::UnknownVariant(d as i32)),
@@ -2358,9 +2358,9 @@ impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2383,7 +2383,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
-resarray: v.try_variable_array::<u_type_name<Bytes>>(Some(42))?,
+resarray: v.read_variable_array::<u_type_name<Bytes>>(Some(42))?,
 })
 }
 }
@@ -2391,9 +2391,9 @@ impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2416,7 +2416,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(CB_COMPOUND4res {
-resarray: v.try_variable_array::<u_type_name<Bytes>>(None)?,
+resarray: v.read_variable_array::<u_type_name<Bytes>>(None)?,
 })
 }
 }
@@ -2424,9 +2424,9 @@ impl TryFrom<&mut Bytes> for u_type_name<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
-1 => Self::v_1(v.try_variable_bytes(None)?),
+1 => Self::v_1(v.read_variable_bytes(None)?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2443,7 +2443,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 "#
@@ -2458,7 +2458,7 @@ Ok(Self(v.try_u32()?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 "#
@@ -2484,7 +2484,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(target {
-var_name: v.try_u32()?,
+var_name: v.read_u32()?,
 })
 }
 }
@@ -2501,7 +2501,7 @@ var_name: v.try_u32()?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 impl TryFrom<&mut Bytes> for alias2 {
@@ -2542,7 +2542,7 @@ type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
 Ok(target {
-var_name: v.try_u32()?,
+var_name: v.read_u32()?,
 })
 }
 }
@@ -2564,7 +2564,7 @@ var_name: v.try_u32()?,
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_u32()?))
+Ok(Self(v.read_u32()?))
 }
 }
 impl TryFrom<&mut Bytes> for nfsace4<Bytes> {
@@ -2588,7 +2588,7 @@ impl TryFrom<&mut Bytes> for utf8string<Bytes> {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_bytes(None)?))
+Ok(Self(v.read_variable_bytes(None)?))
 }
 }
 "#
@@ -2607,7 +2607,7 @@ Ok(Self(v.try_variable_bytes(None)?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_variable_array::<u32>(None)?))
+Ok(Self(v.read_variable_array::<u32>(None)?))
 }
 }
 "#
@@ -2623,7 +2623,7 @@ Ok(Self(v.try_variable_array::<u32>(None)?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(Self(v.try_bytes(8)?))
+Ok(Self(v.read_bytes(8)?))
 }
 }
 "#
@@ -2645,7 +2645,7 @@ Ok(Self(v.try_bytes(8)?))
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 CONST_ONE => Self::ONE,
 CONST_TWO => Self::TWO,
 CONST_THREE => Self::THREE,
@@ -2670,10 +2670,10 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
-1 => Self::CONST_ONE(v.try_u32()?),
-2 => Self::CONST_TWO(v.try_u32()?),
+1 => Self::CONST_ONE(v.read_u32()?),
+2 => Self::CONST_TWO(v.read_u32()?),
 d => return Err(Error::UnknownVariant(d as i32)),
 })
 }
@@ -2699,7 +2699,7 @@ d => return Err(Error::UnknownVariant(d as i32)),
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-Ok(match v.try_i32()? {
+Ok(match v.read_i32()? {
 1 => Self::ONE,
 2 => Self::TWO,
 3 => Self::THREE,
@@ -2711,10 +2711,10 @@ impl TryFrom<&mut Bytes> for u_type_name {
 type Error = Error;
 
 fn try_from(mut v: &mut Bytes) -> Result<Self, Self::Error> {
-let s = v.try_u32()?;
+let s = v.read_u32()?;
 Ok(match s {
-c if c == thing::ONE as u32 => Self::ONE(v.try_u32()?),
-c if c == thing::TWO as u32 => Self::TWO(v.try_u32()?),
+c if c == thing::ONE as u32 => Self::ONE(v.read_u32()?),
+c if c == thing::TWO as u32 => Self::TWO(v.read_u32()?),
 c if c == thing::THREE as u32 => Self::THREE,
 d => return Err(Error::UnknownVariant(d as i32)),
 })

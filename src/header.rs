@@ -1,4 +1,4 @@
-mod xdr {
+pub mod xdr {
     //! An auto-generated set of NFS wire types.
     //!
     //! Do NOT modify the generated file directly.
@@ -36,22 +36,22 @@ mod xdr {
         type Sliced: WireSize + IntoIterator<Item = u8>;
         type TryFrom;
 
-        fn try_u32(&mut self) -> Result<u32, Error>;
-        fn try_u64(&mut self) -> Result<u64, Error>;
-        fn try_i32(&mut self) -> Result<i32, Error>;
-        fn try_i64(&mut self) -> Result<i64, Error>;
-        fn try_f32(&mut self) -> Result<f32, Error>;
-        fn try_f64(&mut self) -> Result<f64, Error>;
-        fn try_bool(&mut self) -> Result<bool, Error>;
-        fn try_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error>;
-        fn try_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
+        fn read_u32(&mut self) -> Result<u32, Error>;
+        fn read_u64(&mut self) -> Result<u64, Error>;
+        fn read_i32(&mut self) -> Result<i32, Error>;
+        fn read_i64(&mut self) -> Result<i64, Error>;
+        fn read_f32(&mut self) -> Result<f32, Error>;
+        fn read_f64(&mut self) -> Result<f64, Error>;
+        fn read_bool(&mut self) -> Result<bool, Error>;
+        fn read_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error>;
+        fn read_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
         where
             T: TryFrom<Self::TryFrom, Error = Error> + WireSize;
 
         /// Try to read an opaque XDR array, prefixed by a length u32 and padded
         /// modulo 4.
-        fn try_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
-            let n = self.try_u32()? as usize;
+        fn read_variable_bytes(&mut self, max: Option<usize>) -> Result<Self::Sliced, Error> {
+            let n = self.read_u32()? as usize;
 
             if let Some(limit) = max {
                 if n > limit {
@@ -59,13 +59,13 @@ mod xdr {
                 }
             }
 
-            self.try_bytes(n)
+            self.read_bytes(n)
         }
 
         /// Reads a variable length UTF8-compatible string from the buffer.
-        fn try_string(&mut self, max: Option<usize>) -> Result<String, Error> {
+        fn read_string(&mut self, max: Option<usize>) -> Result<String, Error> {
             let b = self
-                .try_variable_bytes(max)?
+                .read_variable_bytes(max)?
                 .into_iter()
                 .collect::<Vec<u8>>();
             String::from_utf8(b).map_err(|e| e.into())
@@ -77,49 +77,49 @@ mod xdr {
         type TryFrom = Bytes;
 
         // Try and read a u32 if self contains enough data.
-        fn try_u32(&mut self) -> Result<u32, Error> {
+        fn read_u32(&mut self) -> Result<u32, Error> {
             if self.remaining() < size_of::<u32>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_u32())
         }
 
-        fn try_u64(&mut self) -> Result<u64, Error> {
+        fn read_u64(&mut self) -> Result<u64, Error> {
             if self.remaining() < size_of::<u64>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_u64())
         }
 
-        fn try_i32(&mut self) -> Result<i32, Error> {
+        fn read_i32(&mut self) -> Result<i32, Error> {
             if self.remaining() < size_of::<i32>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_i32())
         }
 
-        fn try_i64(&mut self) -> Result<i64, Error> {
+        fn read_i64(&mut self) -> Result<i64, Error> {
             if self.remaining() < size_of::<i64>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_i64())
         }
 
-        fn try_f32(&mut self) -> Result<f32, Error> {
+        fn read_f32(&mut self) -> Result<f32, Error> {
             if self.remaining() < size_of::<f32>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_f32())
         }
 
-        fn try_f64(&mut self) -> Result<f64, Error> {
+        fn read_f64(&mut self) -> Result<f64, Error> {
             if self.remaining() < size_of::<f64>() {
                 return Err(Error::InvalidLength);
             }
             Ok(self.get_f64())
         }
 
-        fn try_bool(&mut self) -> Result<bool, Error> {
+        fn read_bool(&mut self) -> Result<bool, Error> {
             if self.remaining() < size_of::<i32>() {
                 return Err(Error::InvalidLength);
             }
@@ -131,7 +131,7 @@ mod xdr {
         }
 
         /// Try to read an opaque XDR array with a fixed length and padded modulo 4.
-        fn try_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error> {
+        fn read_bytes(&mut self, n: usize) -> Result<Self::Sliced, Error> {
             // Validate the buffer contains enough data
             if self.remaining() < n {
                 return Err(Error::InvalidLength);
@@ -145,11 +145,11 @@ mod xdr {
             Ok(data)
         }
 
-        fn try_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
+        fn read_variable_array<T>(&mut self, max: Option<usize>) -> Result<Vec<T>, Error>
         where
             T: TryFrom<Self, Error = Error> + WireSize,
         {
-            let n = self.try_u32()? as usize;
+            let n = self.read_u32()? as usize;
 
             if let Some(limit) = max {
                 if n > limit {
@@ -308,7 +308,7 @@ mod xdr {
             type Error = Error;
 
             fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
-                Ok(Self { a: v.try_u32()? })
+                Ok(Self { a: v.read_u32()? })
             }
         }
 
@@ -328,12 +328,12 @@ mod xdr {
 
             fn try_from(mut v: Bytes) -> Result<Self, Self::Error> {
                 // Stub, always has a len of 2
-                let x = v.try_u32()?;
+                let x = v.read_u32()?;
                 if x != 2 {
                     panic!("expected len of 2, got {}", x);
                 }
                 Ok(Self {
-                    a: vec![v.try_u32()?, v.try_u32()?],
+                    a: vec![v.read_u32()?, v.read_u32()?],
                 })
             }
         }
@@ -393,11 +393,14 @@ mod xdr {
             let b = BytesMut::new().freeze();
             assert_eq!(b.wire_size(), 0);
 
-            let b = BytesMut::from("test").freeze();
-            assert_eq!(b.wire_size(), 4);
+            let b = BytesMut::from("test!").freeze();
+            assert_eq!(b.wire_size(), 5);
 
             let b: &[u8] = &[1, 2, 3, 4];
             assert_eq!(b.wire_size(), 4);
+
+            let b: &[u8] = &[1, 2, 3, 4, 5];
+            assert_eq!(b.wire_size(), 8); // Padded
         }
 
         #[test]
@@ -434,7 +437,9 @@ mod xdr {
             buf.put_u32(123); // Remaining buffer
             let mut buf = buf.freeze();
 
-            let got = buf.try_variable_array::<VariableSizedStruct>(None).unwrap();
+            let got = buf
+                .read_variable_array::<VariableSizedStruct>(None)
+                .unwrap();
 
             assert_eq!(got.len(), 2);
             assert_eq!(
@@ -464,7 +469,7 @@ mod xdr {
             buf.put_u32(123); // Remaining buffer
             let mut buf = buf.freeze();
 
-            let got = buf.try_variable_array::<UnalignedStruct>(None).unwrap();
+            let got = buf.read_variable_array::<UnalignedStruct>(None).unwrap();
 
             assert_eq!(got.len(), 4);
             assert_eq!(got.wire_size(), 4 + 4); // Inner vecs + vec length
@@ -496,7 +501,7 @@ mod xdr {
             buf.put_u32(123); // Remaining buffer
             let mut buf = buf.freeze();
 
-            let got = buf.try_variable_array::<UnalignedStruct>(None).unwrap();
+            let got = buf.read_variable_array::<UnalignedStruct>(None).unwrap();
 
             assert_eq!(got.len(), 2);
             assert_eq!(got.wire_size(), 4 + 4);
@@ -508,13 +513,13 @@ mod xdr {
         }
 
         #[test]
-        fn test_try_variable_bytes_no_max() {
+        fn test_read_variable_bytes_no_max() {
             let mut buf = BytesMut::new();
             buf.put_u32(8); // Len=8
             buf.put([1, 2, 3, 4, 5, 6, 7, 8].as_ref());
             let mut buf = buf.freeze();
 
-            let got = buf.try_variable_bytes(None).unwrap();
+            let got = buf.read_variable_bytes(None).unwrap();
 
             assert_eq!(got.len(), 8);
             assert_eq!(got.wire_size(), 8);
@@ -525,13 +530,13 @@ mod xdr {
         }
 
         #[test]
-        fn test_try_variable_bytes_no_max_with_padding() {
+        fn test_read_variable_bytes_no_max_with_padding() {
             let mut buf = BytesMut::new();
             buf.put_u32(6); // Len=6 + 2 bytes padding
             buf.put([1, 2, 3, 4, 5, 6, 0, 0].as_ref());
             let mut buf = buf.freeze();
 
-            let got = buf.try_variable_bytes(None).unwrap();
+            let got = buf.read_variable_bytes(None).unwrap();
 
             assert_eq!(got.len(), 6);
             assert_eq!(got.wire_size(), 6);
@@ -542,15 +547,15 @@ mod xdr {
         }
 
         #[test]
-        fn test_try_bool() {
+        fn test_read_bool() {
             let mut buf = BytesMut::new();
             buf.put_u32(0);
             buf.put_u32(1);
             buf.put_u32(2);
             let mut buf = buf.freeze();
 
-            assert_eq!(buf.try_bool(), Ok(false));
-            assert_eq!(buf.try_bool(), Ok(true));
-            assert!(buf.try_bool().is_err());
+            assert_eq!(buf.read_bool(), Ok(false));
+            assert_eq!(buf.read_bool(), Ok(true));
+            assert!(buf.read_bool().is_err());
         }
     }
