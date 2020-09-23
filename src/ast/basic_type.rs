@@ -52,10 +52,7 @@ impl<'a> BasicType {
     }
 
     pub fn is_opaque(&self) -> bool {
-        match self {
-            Self::Opaque => true,
-            _ => false,
-        }
+        matches!(self, Self::Opaque)
     }
 }
 

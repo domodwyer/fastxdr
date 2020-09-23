@@ -86,10 +86,7 @@ impl StructField {
     }
 
     pub fn contains_opaque(&self) -> bool {
-        match self.field_value.unwrap_array() {
-            BasicType::Opaque => true,
-            _ => false,
-        }
+        matches!(self.field_value.unwrap_array(), BasicType::Opaque)
     }
 }
 
