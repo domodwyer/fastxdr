@@ -8,9 +8,10 @@ repos:
           "-D missing_debug_implementations",
           "-D unreachable_pub",
           "-D clippy::doc_markdown",
-          "-D clippy::todo",
           "-D clippy::dbg_macro",
+          "-D clippy::todo",
           "-D clippy::unimplemented",
+          "-D clippy::match-like-matches-macro",
           # Allow the following:
           "-A missing_docs",
           "-A clippy::missing_docs_in_private_items",
