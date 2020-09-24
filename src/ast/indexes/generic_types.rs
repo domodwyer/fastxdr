@@ -143,8 +143,8 @@ struct another {
         let got = got.as_mut_slice();
         let want = want.as_mut_slice();
 
-        got.sort();
-        want.sort();
+        got.sort_unstable();
+        want.sort_unstable();
 
         assert_eq!(got, want);
     }
@@ -178,8 +178,8 @@ struct stateid4 {
         let got = got.as_mut_slice();
         let want = want.as_mut_slice();
 
-        got.sort();
-        want.sort();
+        got.sort_unstable();
+        want.sort_unstable();
 
         assert_eq!(got, want);
     }
@@ -213,8 +213,8 @@ struct another {
         let got = got.as_mut_slice();
         let want = want.as_mut_slice();
 
-        got.sort();
-        want.sort();
+        got.sort_unstable();
+        want.sort_unstable();
 
         assert_eq!(got, want);
     }
@@ -249,8 +249,8 @@ union READ4res switch (nfsstat4 status) {
         let got = got.as_mut_slice();
         let want = want.as_mut_slice();
 
-        got.sort();
-        want.sort();
+        got.sort_unstable();
+        want.sort_unstable();
 
         assert_eq!(got, want);
     }
