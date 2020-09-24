@@ -117,6 +117,6 @@ fn walk(ast: Pair<'_, Rule>) -> Node<'_> {
             Node::Type(BasicType::try_from(ast.as_str()).expect("unrecognised type"))
         }
         Rule::EOI => Node::EOF,
-        e => unimplemented!("unknown token type {:?}", e),
+        e => panic!("unknown token type {:?}", e),
     }
 }
