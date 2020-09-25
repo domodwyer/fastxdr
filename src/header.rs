@@ -180,6 +180,22 @@ pub mod xdr {
         fn wire_size(&self) -> usize;
     }
 
+    macro_rules! wiresize_fixed {
+        ($size:literal, $($type:ty),+) => {
+            $(
+                impl WireSize for $type {
+                    fn wire_size(&self) -> usize {
+                        $size
+                    }
+                }
+            )+
+        };
+    }
+
+    wiresize_fixed!(1, u8);
+    wiresize_fixed!(4, u32, i32, f32, bool);
+    wiresize_fixed!(8, u64, i64, f64);
+
     impl WireSize for Bytes {
         fn wire_size(&self) -> usize {
             self.len()
@@ -232,60 +248,13 @@ pub mod xdr {
         }
     }
 
-    impl WireSize for u8 {
-        fn wire_size(&self) -> usize {
-            1
-        }
-    }
-
-    impl WireSize for u32 {
-        fn wire_size(&self) -> usize {
-            4
-        }
-    }
-
-    impl WireSize for i32 {
-        fn wire_size(&self) -> usize {
-            4
-        }
-    }
-
-    impl WireSize for u64 {
-        fn wire_size(&self) -> usize {
-            8
-        }
-    }
-
-    impl WireSize for i64 {
-        fn wire_size(&self) -> usize {
-            8
-        }
-    }
-
-    impl WireSize for f32 {
-        fn wire_size(&self) -> usize {
-            4
-        }
-    }
-
-    impl WireSize for f64 {
-        fn wire_size(&self) -> usize {
-            8
-        }
-    }
-
-    impl WireSize for bool {
-        fn wire_size(&self) -> usize {
-            4
-        }
-    }
-
     impl WireSize for String {
         fn wire_size(&self) -> usize {
             4 + self.len() + pad_length(self.len())
         }
     }
 
+    /// Return the amount of padding needed for a value of l bytes in length.
     #[inline]
     fn pad_length(l: usize) -> usize {
         if l % 4 == 0 {
@@ -349,6 +318,8 @@ pub mod xdr {
             a: u8,
         }
 
+        wiresize_fixed!(1, UnalignedStruct);
+
         impl TryFrom<Bytes> for UnalignedStruct {
             type Error = Error;
 
@@ -356,12 +327,6 @@ pub mod xdr {
                 let s = v.slice(..1);
                 v.advance(1);
                 Ok(Self { a: s.as_ref()[0] })
-            }
-        }
-
-        impl WireSize for UnalignedStruct {
-            fn wire_size(&self) -> usize {
-                1
             }
         }
 
@@ -381,8 +346,8 @@ pub mod xdr {
             assert_eq!((42 as i32).wire_size(), 4);
             assert_eq!((42 as u64).wire_size(), 8);
             assert_eq!((42 as i64).wire_size(), 8);
-            assert_eq!((42 as f32).wire_size(), 4);
-            assert_eq!((42 as f64).wire_size(), 8);
+            assert_eq!((42_f32).wire_size(), 4);
+            assert_eq!((42_f64).wire_size(), 8);
 
             // Length prefix of 4 bytes, plus data 5 bytes, plus padding to mod 4
             assert_eq!(String::from("test!").wire_size(), 4 + 5 + 3);
