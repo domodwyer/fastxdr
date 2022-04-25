@@ -65,7 +65,7 @@ impl<'a> std::fmt::Display for BasicType {
 impl<'a> From<&'a str> for BasicType {
     fn from(v: &'a str) -> Self {
         match v.trim() {
-            "unsigned int" | "uint32_t" | "u32" => Self::U32,
+            "unsigned int" | "uint32_t" | "u32" | "unsigned" => Self::U32,
             "int" | "int32_t" | "i32" => Self::I32,
             "unsigned hyper" | "uint64_t" | "u64" => Self::U64,
             "hyper" | "int64_t" | "i64" => Self::I64,

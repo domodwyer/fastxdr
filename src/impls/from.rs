@@ -453,12 +453,13 @@ mod tests {
 				unsigned int a;
 				unsigned hyper b;
 				int c;
-				hyper d;
-				float e;
-				double f;
-				string g;
-				bool h;
-				opaque i;
+				unsigned d;
+				hyper e;
+				float f;
+				double g;
+				string h;
+				bool i;
+				opaque j;
 			};
 		"#,
         r#"impl TryFrom<&mut Bytes> for small<Bytes> {
@@ -469,12 +470,13 @@ Ok(small {
 a: v.read_u32()?,
 b: v.read_u64()?,
 c: v.read_i32()?,
-d: v.read_i64()?,
-e: v.read_f32()?,
-f: v.read_f64()?,
-g: v.read_string(None)?,
-h: v.read_bool()?,
-i: v.read_variable_bytes(None)?,
+d: v.read_u32()?,
+e: v.read_i64()?,
+f: v.read_f32()?,
+g: v.read_f64()?,
+h: v.read_string(None)?,
+i: v.read_bool()?,
+j: v.read_variable_bytes(None)?,
 })
 }
 }

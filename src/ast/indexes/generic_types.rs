@@ -93,7 +93,7 @@ impl GenericIndex {
             }
 
             contains_opaque
-        };
+        }
 
         let mut index: HashSet<String> = HashSet::new();
         let mut last_size: isize = -1;
