@@ -48,14 +48,6 @@ information is exposed to users through the `index` and `ast` modules.
 
 ## Usage
 
-The generated code has dependencies that must be added to your `Cargo.toml`:
-
-```toml
-[dependencies]
-thiserror = "1.0"
-bytes = "0.5"
-```
-
 Then either generate the code as part of a build script (preferred), or manually
 using the CLI.
 
@@ -110,6 +102,9 @@ You can also generate the code with the CLI:
 cargo install fastxdr
 fastxdr ./path/to/spec.x > generated.rs
 ```
+
+You'll also have to depend on `fastxdr` in the project that consumes the
+generated file in order to access `fastxdr::Bytes` and friends.
 
 This can get confusing if the spec is modified and the code is not regenerated,
 or the spec is not checked into source control and typically a `build.rs` script
