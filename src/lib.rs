@@ -60,6 +60,11 @@ pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq)]";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + 'static>>;
 
+/// Re-export of `Bytes` used for generated code.
+pub use bytes;
+/// Re-export of `thiserror` used for generated code.
+pub use thiserror;
+
 #[derive(Debug)]
 pub struct Generator {
     derive: String,

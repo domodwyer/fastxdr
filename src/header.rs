@@ -5,11 +5,12 @@ pub mod xdr {
 
     #![allow(non_camel_case_types, dead_code, unused_mut, unreachable_patterns)]
 
-    use bytes::{Buf, Bytes};
     use std::convert::TryFrom;
     use std::fmt::Debug;
     use std::mem::size_of;
-    use thiserror::Error;
+    
+    use fastxdr::bytes::{Buf, Bytes};
+    use fastxdr::thiserror::Error;
 
     #[derive(Debug, Error, PartialEq)]
     pub enum Error {
@@ -266,7 +267,7 @@ pub mod xdr {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use bytes::{BufMut, BytesMut};
+        use fastxdr::bytes::{BufMut, BytesMut};
 
         #[derive(Debug, PartialEq)]
         struct TestStruct {
