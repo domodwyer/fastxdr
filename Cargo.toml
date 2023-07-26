@@ -17,6 +17,6 @@ categories = ["network-programming", "encoding", "parser-implementations", "pars
 
 [dependencies]
 pest = "2.7.1"
-pest_derive = "2.7.0"
+pest_derive = "2.7.1"
 thiserror = "1.0.44"
 bytes = "1.4.0"
