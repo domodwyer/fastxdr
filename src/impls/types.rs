@@ -99,6 +99,7 @@ pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Re
             }
             AstType::Enum(v) => {
                 writeln!(w, "{}", derive)?;
+                writeln!(w, "#[repr(u32)]")?;
                 writeln!(w, "pub enum {} {{", v.name)?;
                 for var in v.variants.iter() {
                     writeln!(w, "{} = {},", var.name, var.value)?;
@@ -414,6 +415,7 @@ pub r_addr: String,
 			};
 		"#,
         r#"#[derive(Debug, PartialEq)]
+#[repr(u32)]
 pub enum opentype4 {
 OPEN4_NOCREATE = 0,
 OPEN4_CREATE = 1,
@@ -427,6 +429,28 @@ OPEN4_CREATE = 1,
 			const ACL4_SUPPORT_ALLOW_ACL    = 0x00000001;
 		"#,
         r#"pub const ACL4_SUPPORT_ALLOW_ACL: u32 = 0x00000001;
+"#
+    );
+
+    test_convert!(
+        test_enum_const,
+        r#"
+            const OPEN4NOCREATE = 0;
+            const OPEN4CREATE = 1;
+
+			enum opentype4 {
+					OPEN4_NOCREATE  = OPEN4NOCREATE,
+					OPEN4_CREATE    = OPEN4CREATE
+			};
+		"#,
+        r#"pub const OPEN4CREATE: u32 = 1;
+pub const OPEN4NOCREATE: u32 = 0;
+#[derive(Debug, PartialEq)]
+#[repr(u32)]
+pub enum opentype4 {
+OPEN4_NOCREATE = OPEN4NOCREATE,
+OPEN4_CREATE = OPEN4CREATE,
+}
 "#
     );
 
