@@ -16,7 +16,7 @@ keywords = ["xdr", "codec", "encode", "onc", "rpc"]
 categories = ["network-programming", "encoding", "parser-implementations", "parsing", "development-tools::build-utils"]
 
 [dependencies]
-pest = "2.7.15"
+pest = "2.8.0"
 pest_derive = "2.7.15"
 thiserror = "2.0.12"
 bytes = "1.10.1"
