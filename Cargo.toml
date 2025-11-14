@@ -19,4 +19,4 @@ categories = ["network-programming", "encoding", "parser-implementations", "pars
 pest = "2.8.3"
 pest_derive = "2.8.3"
 thiserror = "2.0.17"
-bytes = "1.10.1"
+bytes = "1.11.0"
