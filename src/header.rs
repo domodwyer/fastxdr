@@ -1,5 +1,5 @@
 pub mod xdr {
-    //! An auto-generated set of NFS wire types.
+    //! An auto-generated set of XDR wire types.
     //!
     //! Do NOT modify the generated file directly.
 
@@ -9,7 +9,7 @@ pub mod xdr {
     use std::fmt::Debug;
     use std::mem::size_of;
     
-    use fastxdr::bytes::{Buf, Bytes};
+    use fastxdr::bytes::{Buf, Bytes, BytesMut};
     use fastxdr::thiserror::Error;
 
     #[derive(Debug, Error, PartialEq)]
@@ -180,6 +180,11 @@ pub mod xdr {
     pub trait WireSize {
         fn wire_size(&self) -> usize;
     }
+
+    pub trait Serialisable {
+    /// Serialize all the content in `self`, into `dst`.
+    fn serialize(&self, dst: &mut BytesMut);
+    } 
 
     macro_rules! wiresize_fixed {
         ($size:literal, $($type:ty),+) => {

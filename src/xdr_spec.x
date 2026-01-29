@@ -18,7 +18,13 @@ union choice switch (BIG_NUMBERS num) {
 	void;
 };
 
+struct nested {
+	int 			   id;
+};
+
 struct data {
 	BIG_NUMBERS        major;
 	int        		   minor;
+	nested		       whataboutthis;
 };
+

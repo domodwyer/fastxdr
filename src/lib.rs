@@ -48,7 +48,9 @@
 pub mod ast;
 pub mod impls;
 
-use crate::impls::{print_impl_from, print_impl_wire_size, print_types, template};
+use crate::impls::{
+    print_impl_from, print_impl_wire_size, print_serializers, print_types, template,
+};
 use std::fmt::Write;
 
 /// `DEFAULT_DERIVE` defines the default "derive" line prepended to type
@@ -96,6 +98,9 @@ impl Generator {
 
         // Generate the types
         print_types(&mut out, &ast, &self.derive.as_str())?;
+
+        // Generate the serializer
+        print_serializers(&mut out, &ast)?;
 
         // Write the two from traits, one for Bytes and one for &mut Bytes
         print_impl_from(&mut out, template::bytes::Bytes, &ast)?;
