@@ -9,7 +9,7 @@ pub mod xdr {
     use std::fmt::Debug;
     use std::mem::size_of;
     
-    use fastxdr::bytes::{Buf, Bytes, BytesMut};
+    use fastxdr::bytes::{Buf, BufMut, Bytes, BytesMut};
     use fastxdr::thiserror::Error;
 
     #[derive(Debug, Error, PartialEq)]
@@ -166,7 +166,7 @@ pub mod xdr {
                 if self.remaining() < t.wire_size() {
                     return Err(Error::InvalidLength);
                 }
-                self.advance(t.wire_size());
+                self.advance(pad_length(t.wire_size()));
                 sum += t.wire_size();
                 out.push(t);
             }

@@ -58,7 +58,7 @@ use std::fmt::Write;
 ///
 /// Custom "derive" lines can be used when generating Rust types with
 /// [`Generator::with_derive()`](Generator::with_derive).
-pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq)]";
+pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq, Clone)]";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + 'static>>;
 
@@ -103,11 +103,11 @@ impl Generator {
         print_serializers(&mut out, &ast)?;
 
         // Write the two from traits, one for Bytes and one for &mut Bytes
-        print_impl_from(&mut out, template::bytes::Bytes, &ast)?;
-        print_impl_from(&mut out, template::bytes::RefMutBytes, &ast)?;
+        //print_impl_from(&mut out, template::bytes::Bytes, &ast)?;
+        //print_impl_from(&mut out, template::bytes::RefMutBytes, &ast)?;
 
         // Write the wire_size() implementations
-        print_impl_wire_size(&mut out, template::bytes::Bytes, &ast)?;
+        //print_impl_wire_size(&mut out, template::bytes::Bytes, &ast)?;
 
         // End the header.rs with a closing }
         writeln!(out, "}}")?;
