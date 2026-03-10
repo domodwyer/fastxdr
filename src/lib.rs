@@ -103,11 +103,11 @@ impl Generator {
         print_serializers(&mut out, &ast)?;
 
         // Write the two from traits, one for Bytes and one for &mut Bytes
-        //print_impl_from(&mut out, template::bytes::Bytes, &ast)?;
-        //print_impl_from(&mut out, template::bytes::RefMutBytes, &ast)?;
+        print_impl_from(&mut out, template::bytes::Bytes, &ast)?;
+        print_impl_from(&mut out, template::bytes::RefMutBytes, &ast)?;
 
         // Write the wire_size() implementations
-        //print_impl_wire_size(&mut out, template::bytes::Bytes, &ast)?;
+        print_impl_wire_size(&mut out, template::bytes::Bytes, &ast)?;
 
         // End the header.rs with a closing }
         writeln!(out, "}}")?;

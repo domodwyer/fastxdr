@@ -8,7 +8,7 @@ pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Re
     for item in ast.constants().iter() {
         match item.1 {
             ConstantType::EnumValue { .. } => continue,
-            ConstantType::ConstValue(s) => writeln!(w, "pub const {}: u32 = {};", item.0, s)?,
+            ConstantType::ConstValue(s) => writeln!(w, "pub const {}: u64 = {};", item.0, s)?,
         }
     }
 
