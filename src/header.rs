@@ -166,7 +166,7 @@ pub mod xdr {
                 if self.remaining() < t.wire_size() {
                     return Err(Error::InvalidLength);
                 }
-                self.advance(pad_length(t.wire_size()));
+                self.advance(t.wire_size());
                 sum += t.wire_size();
                 out.push(t);
             }
