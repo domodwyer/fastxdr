@@ -53,7 +53,10 @@ pub fn print_serializers<W: std::fmt::Write>(w: &mut W, ast: &Ast) -> Result<()>
                     }
                     writeln!(w, "_ => dst.put_i32(0),")?;
                     writeln!(w, "}}")?;
-                    writeln!(w, "for _ in 0..pad_length(dst.len() - n_start) {{ dst.put_u8(0) }}")?;
+                    writeln!(
+                        w,
+                        "for _ in 0..pad_length(dst.len() - n_start) {{ dst.put_u8(0) }}"
+                    )?;
                     Ok(())
                 })?;
             }
@@ -61,9 +64,16 @@ pub fn print_serializers<W: std::fmt::Write>(w: &mut W, ast: &Ast) -> Result<()>
                 print_impl(w, &v.name, ast, |w| {
                     writeln!(w, "let n_start = dst.len();")?;
                     for field in v.fields.iter() {
-                        writeln!(w, "self.{}.serialize(dst);", SafeName(field.field_name.as_str()))?;
+                        writeln!(
+                            w,
+                            "self.{}.serialize(dst);",
+                            SafeName(field.field_name.as_str())
+                        )?;
                     }
-                    writeln!(w, "for _ in 0..pad_length(dst.len() - n_start) {{ dst.put_u8(0) }}")?;
+                    writeln!(
+                        w,
+                        "for _ in 0..pad_length(dst.len() - n_start) {{ dst.put_u8(0) }}"
+                    )?;
                     Ok(())
                 })?;
             }
@@ -93,4 +103,3 @@ fn print_impl<W: std::fmt::Write, F: FnOnce(&mut W) -> Result<()>>(
     writeln!(w, "}}\n}}")?;
     Ok(())
 }
-
