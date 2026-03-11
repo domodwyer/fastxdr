@@ -25,6 +25,7 @@ pub fn print_serializers<W: std::fmt::Write>(w: &mut W, ast: &Ast) -> Result<()>
                 let alias = v.alias.unwrap_array().as_str();
                 print_impl(w, alias, ast, |w| {
                     if v.target.is_opaque() {
+                        writeln!(w, "dst.put_u32(self.0.as_ref().len() as u32);")?;
                         writeln!(w, "dst.put_slice(self.0.as_ref());")?;
                     } else {
                         writeln!(w, "self.0.serialize(dst);")?;
@@ -44,10 +45,21 @@ pub fn print_serializers<W: std::fmt::Write>(w: &mut W, ast: &Ast) -> Result<()>
                     writeln!(w, "match self {{")?;
                     for c in v.cases.iter() {
                         for c_value in c.case_values.iter() {
+                            let matcher = ast
+                                .constants()
+                                .get(c_value.as_str())
+                                .map(|c| match *c {
+                                    ConstantType::ConstValue(ref v) => SafeName(v).to_string(),
+                                    ConstantType::EnumValue {
+                                        ref enum_name,
+                                        ref variant,
+                                    } => format!("{}::{}", enum_name, variant,),
+                                })
+                                .unwrap_or_else(|| SafeName(c_value).to_string());
                             writeln!(
                                 w,
-                                "Self::{}(var) => {{ dst.put_u32(Self::{} as u32); var.serialize(dst); }},",
-                                c_value, c_value,
+                                "Self::{}(var) => {{ dst.put_u32({} as u32); var.serialize(dst); }},",
+                                c_value, matcher,
                             )?;
                         }
                     }
