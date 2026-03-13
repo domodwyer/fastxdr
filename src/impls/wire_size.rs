@@ -22,6 +22,7 @@ pub fn print_impl_wire_size<W: std::fmt::Write, T: FromTemplate>(
                                 SafeName(&f.field_name)
                             )?;
                         }
+                        // remediates https://github.com/domodwyer/fastxdr/issues/150
                         match f.field_value {
                             crate::ast::ArrayType::VariableSize(..) => write!(w, "4+")?,
                             _ => {}
