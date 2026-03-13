@@ -14,7 +14,6 @@ pub fn print_impl_wire_size<W: std::fmt::Write, T: FromTemplate>(
                 print_impl(&mut w, template, v.name(), ast, |w| {
                     for f in v.fields.iter() {
                         writeln!(w, r#"self.{}.wire_size() +"#, SafeName(&f.field_name))?;
-
                         // In-line opaques require padding
                         if f.contains_opaque() {
                             writeln!(
@@ -22,6 +21,11 @@ pub fn print_impl_wire_size<W: std::fmt::Write, T: FromTemplate>(
                                 r#" pad_length(self.{}.wire_size()) +"#,
                                 SafeName(&f.field_name)
                             )?;
+                        }
+                        // remediates https://github.com/domodwyer/fastxdr/issues/150
+                        match f.field_value {
+                            crate::ast::ArrayType::VariableSize(..) => write!(w, "4+")?,
+                            _ => {}
                         }
                     }
 
