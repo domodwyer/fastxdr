@@ -8,7 +8,18 @@ pub fn print_types<W: std::fmt::Write>(w: &mut W, ast: &Ast, derive: &str) -> Re
     for item in ast.constants().iter() {
         match item.1 {
             ConstantType::EnumValue { .. } => continue,
-            ConstantType::ConstValue(s) => writeln!(w, "pub const {}: u32 = {};", item.0, s)?,
+            ConstantType::ConstValue(s) => {
+                if s.starts_with("0x") {
+                    let result = u32::from_str_radix(s.trim_start_matches("0x"), 16);
+
+                    match result {
+                        Ok(_) => writeln!(w, "pub const {}: u32 = {};", item.0, s)?,
+                        Err(_) => writeln!(w, "pub const {}: u64 = {};", item.0, s)?,
+                    }
+                } else {
+                    writeln!(w, "pub const {}: u32 = {};", item.0, s)?
+                }
+            }
         }
     }
 
