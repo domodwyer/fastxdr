@@ -48,7 +48,9 @@
 pub mod ast;
 pub mod impls;
 
-use crate::impls::{print_impl_from, print_impl_wire_size, print_types, template};
+use crate::impls::{
+    print_impl_from, print_impl_wire_size, print_serializers, print_types, template,
+};
 use std::fmt::Write;
 
 /// `DEFAULT_DERIVE` defines the default "derive" line prepended to type
@@ -56,7 +58,7 @@ use std::fmt::Write;
 ///
 /// Custom "derive" lines can be used when generating Rust types with
 /// [`Generator::with_derive()`](Generator::with_derive).
-pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq)]";
+pub const DEFAULT_DERIVE: &str = "#[derive(Debug, PartialEq, Clone)]";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + 'static>>;
 
@@ -96,6 +98,9 @@ impl Generator {
 
         // Generate the types
         print_types(&mut out, &ast, &self.derive.as_str())?;
+
+        // Generate the serializer
+        print_serializers(&mut out, &ast)?;
 
         // Write the two from traits, one for Bytes and one for &mut Bytes
         print_impl_from(&mut out, template::bytes::Bytes, &ast)?;

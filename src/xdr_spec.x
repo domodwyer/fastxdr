@@ -11,14 +11,22 @@ enum Status {
 
 typedef unsigned hyper BIG_NUMBERS;
 
-union choice switch (BIG_NUMBERS num) {
+union choice switch (int num) {
  case ANSWER:
 	data       varname;
  default:
 	void;
 };
 
+struct nested {
+	int 			   id;
+};
+
 struct data {
 	BIG_NUMBERS        major;
 	int        		   minor;
+	nested		       whataboutthis;
+	int			       counted<>;
+	int			       fixed[10];
 };
+

@@ -6,6 +6,9 @@ pub use from::*;
 mod types;
 pub use types::*;
 
+mod serializer;
+pub use serializer::*;
+
 mod wire_size;
 pub use wire_size::*;
 
